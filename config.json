@@ -1,0 +1,12 @@
+{
+  "owner": "558881905006",
+  "admins": [
+    "NUMERO_DE_ADMIN_1_AQUI",
+    "NUMERO_DE_ADMIN_2_AQUI",
+    "211780626288811"
+  ],
+  "apiKeys": {
+    "gemini": "AIzaSyD605nCBCWpvMranC9Uu6JjuIqh2DBypKg",
+    "openrouter": "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"
+  }
+}
