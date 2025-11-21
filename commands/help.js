@@ -6,9 +6,17 @@ module.exports = {
     description: 'Mostra a lista de comandos disponíveis.',
     category: 'utilitario',
     permission: 'user',
-    async execute({ sock, chatJid, senderJid, permissionLevel, commands, prefixo }) {
+    async execute({ sock, msg, chatJid, senderJid, permissionLevel, commands, prefixo }) {
+        const { jidNormalizedUser } = require('@whiskeysockets/baileys');
         const isAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
-        const targetJid = isAdmin ? senderJid : chatJid;
+
+        // Garantir que o targetJid seja o número de telefone para envio no PV
+        let targetJid = isAdmin ? senderJid : chatJid;
+        if (isAdmin && targetJid.includes('@lid')) {
+            targetJid = jidNormalizedUser(targetJid);
+        }
+
+        console.log(`[Help Command] Executando para ${senderJid}. Admin? ${isAdmin}. Target: ${targetJid}. Chat: ${chatJid}`);
 
         const categorizedCommands = {};
         const addedCommands = new Set();
@@ -56,15 +64,22 @@ module.exports = {
                 helpMessage += '\nNenhum comando público disponível no momento.';
             }
         }
-        
+
         helpMessage += `\nUse *${prefixo}comando --help* para ver mais detalhes sobre um comando específico.`;
 
         try {
             await sock.sendMessage(targetJid, { text: helpMessage });
-            
+            console.log(`[Help Command] Menu enviado para ${targetJid}`);
+
             // Se a mensagem foi para o PV do admin, notificar no grupo.
             if (isAdmin && chatJid !== targetJid) {
-                await sock.sendMessage(chatJid, { text: `✅ Olá, *@${senderJid.split('@')[0]}*! Enviei a lista completa de comandos no seu privado.`, mentions: [senderJid] });
+                const normalizedSender = jidNormalizedUser(senderJid);
+                const senderNum = normalizedSender.split('@')[0];
+                console.log(`[Help Command] Notificando grupo ${chatJid} sobre envio no PV.`);
+                await sock.sendMessage(chatJid, {
+                    text: `✅ Olá, *@${senderNum}*! Enviei a lista completa de comandos no seu privado.`,
+                    mentions: [normalizedSender]
+                }, { quoted: msg });
             }
         } catch (error) {
             console.error("Erro ao enviar mensagem de ajuda:", error);

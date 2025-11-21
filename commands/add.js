@@ -14,7 +14,7 @@ module.exports = {
      * @param {string} context.chatJid
      * @param {string} context.senderJid
      */
-    async execute({ sock, args, chatJid, senderJid }) {
+    async execute({ sock, args, chatJid, senderJid, permissionLevel }) {
         // 1. Verificar se é um grupo
         if (!chatJid.endsWith('@g.us')) {
             return 'Este comando só pode ser usado em grupos.';
@@ -24,7 +24,7 @@ module.exports = {
         if (!args[0]) {
             return '🤖 Por favor, forneça o número de telefone que deseja adicionar.\n\n*Exemplo:* `!add 88912345678`';
         }
-        
+
         // 3. Obter metadados e verificar permissões
         let groupMetadata;
         try {
@@ -35,7 +35,9 @@ module.exports = {
         }
 
         const senderParticipant = groupMetadata.participants.find(p => p.id === senderJid);
-        if (!senderParticipant?.admin) {
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+
+        if (!senderParticipant?.admin && !isBotAdmin) {
             return '❌ Apenas administradores do grupo podem usar este comando.';
         }
 
@@ -64,7 +66,7 @@ module.exports = {
         const phoneInput = args[0].replace(/[^0-9]/g, '');
         const ddd = phoneInput.substring(0, 2);
         const numberPart = phoneInput.substring(2);
-        
+
         let numbersToTry = [];
         if (numberPart.length === 9 && numberPart.startsWith('9')) {
             numbersToTry.push(phoneInput);
@@ -79,7 +81,7 @@ module.exports = {
         // 5. Tentar adicionar cada variação
         for (const phone of numbersToTry) {
             const userJid = `55${phone}@s.whatsapp.net`;
-            
+
             const [check] = await sock.onWhatsApp(userJid);
             if (!check?.exists) {
                 console.log(`[Comando Add] Número ${phone} não existe no WhatsApp. Tentando a próxima variação...`);
@@ -91,12 +93,12 @@ module.exports = {
             try {
                 const response = await sock.groupParticipantsUpdate(chatJid, [userJid], 'add');
                 const result = response[0];
-                
+
                 // Se a API responder sem erro, verificamos o status
                 if (result.status === '200') {
                     wasSuccessful = true;
                 } else if (result.status === '409') {
-                     return `ℹ️ O usuário @${phone} já está neste grupo.`;
+                    return `ℹ️ O usuário @${phone} já está neste grupo.`;
                 } else if (result.status === '403') {
                     await sock.sendMessage(chatJid, { text: `❌ Não foi possível adicionar @${phone}. O usuário tem restrições de privacidade.`, mentions: [userJid] });
                     return null;

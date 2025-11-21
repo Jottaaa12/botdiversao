@@ -18,6 +18,7 @@ const createTables = () => {
             nome TEXT,
             historico_interacoes TEXT, -- JSON string
             banned BOOLEAN DEFAULT FALSE,
+            role TEXT DEFAULT 'user', -- 'user', 'admin', 'owner'
             criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
             atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -181,6 +182,28 @@ const createTables = () => {
             UNIQUE(gatilho, id_grupo)
         )
     `);
+
+    // Tabela de membros de grupo (para ranking e fantasmas)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS membros_grupo (
+            id_grupo TEXT NOT NULL,
+            id_usuario TEXT NOT NULL,
+            msg_count INTEGER DEFAULT 0,
+            last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id_grupo, id_usuario)
+        )
+    `);
+
+    // Tabela de casamentos
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS casamentos (
+            id_usuario1 TEXT NOT NULL,
+            id_usuario2 TEXT NOT NULL,
+            data_casamento DATETIME DEFAULT CURRENT_TIMESTAMP,
+            nivel_amor INTEGER DEFAULT 100,
+            PRIMARY KEY (id_usuario1, id_usuario2)
+        )
+    `);
 };
 
 // Inicializar banco
@@ -194,6 +217,11 @@ try {
         console.log("A coluna 'banned' não existe na tabela 'usuarios'. Adicionando...");
         db.exec('ALTER TABLE usuarios ADD COLUMN banned BOOLEAN DEFAULT FALSE');
         console.log("Coluna 'banned' adicionada com sucesso.");
+    }
+    if (!columns.includes('role')) {
+        console.log("A coluna 'role' não existe na tabela 'usuarios'. Adicionando...");
+        db.exec("ALTER TABLE usuarios ADD COLUMN role TEXT DEFAULT 'user'");
+        console.log("Coluna 'role' adicionada com sucesso.");
     }
 } catch (error) {
     console.error("Erro ao migrar a tabela 'usuarios':", error);
@@ -223,6 +251,14 @@ const banUser = db.prepare(`
 
 const unbanUser = db.prepare(`
     UPDATE usuarios SET banned = FALSE, atualizado_em = CURRENT_TIMESTAMP WHERE id_whatsapp = ?
+`);
+
+const updateUserRole = db.prepare(`
+    UPDATE usuarios SET role = ?, atualizado_em = CURRENT_TIMESTAMP WHERE id_whatsapp = ?
+`);
+
+const getAdmins = db.prepare(`
+    SELECT * FROM usuarios WHERE role = 'admin' OR role = 'owner'
 `);
 
 // Prepared statements para projetos
@@ -362,22 +398,81 @@ const getAllMutes = db.prepare(`
     SELECT * FROM mutados
 `);
 
-// Prepared statements para auto-respostas
-const insertAutoResposta = db.prepare(`
-    INSERT OR REPLACE INTO auto_respostas (gatilho, resposta, id_grupo, criado_por)
-    VALUES (?, ?, ?, ?)
+const getMutesByGroup = db.prepare(`
+    SELECT * FROM mutados WHERE id_grupo = ?
 `);
 
+// Prepared statements para auto-respostas
+const insertAutoResposta = db.prepare(`
+    INSERT OR REPLACE INTO auto_respostas(gatilho, resposta, id_grupo, criado_por)
+VALUES(?, ?, ?, ?)
+    `);
+
 const getAutoResposta = db.prepare(`
-    SELECT * FROM auto_respostas WHERE gatilho = ? AND id_grupo = ?
-`);
+SELECT * FROM auto_respostas WHERE gatilho = ? AND id_grupo = ?
+    `);
 
 const listAutoRespostas = db.prepare(`
     SELECT * FROM auto_respostas WHERE id_grupo = ?
-`);
+    `);
 
 const deleteAutoResposta = db.prepare(`
     DELETE FROM auto_respostas WHERE gatilho = ? AND id_grupo = ?
+    `);
+
+// Prepared statements para membros de grupo
+const upsertMembroGrupo = db.prepare(`
+    INSERT INTO membros_grupo (id_grupo, id_usuario, msg_count, last_seen)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(id_grupo, id_usuario) DO UPDATE SET
+        msg_count = msg_count + 1,
+        last_seen = CURRENT_TIMESTAMP
+`);
+
+const getRankingGrupo = db.prepare(`
+    SELECT id_usuario, msg_count, last_seen
+    FROM membros_grupo
+    WHERE id_grupo = ?
+    ORDER BY msg_count DESC
+    LIMIT ?
+`);
+
+const getInativosGrupo = db.prepare(`
+    SELECT id_usuario, msg_count, last_seen
+    FROM membros_grupo
+    WHERE id_grupo = ?
+    AND julianday('now') - julianday(last_seen) > ?
+    ORDER BY last_seen ASC
+`);
+
+// Prepared statements para casamentos
+const insertCasamento = db.prepare(`
+    INSERT INTO casamentos (id_usuario1, id_usuario2, data_casamento, nivel_amor)
+    VALUES (?, ?, CURRENT_TIMESTAMP, 100)
+`);
+
+const deleteCasamento = db.prepare(`
+    DELETE FROM casamentos
+    WHERE (id_usuario1 = ? AND id_usuario2 = ?)
+    OR (id_usuario1 = ? AND id_usuario2 = ?)
+`);
+
+const getConjuge = db.prepare(`
+    SELECT
+        CASE
+            WHEN id_usuario1 = ? THEN id_usuario2
+            ELSE id_usuario1
+        END as conjuge,
+        data_casamento,
+        nivel_amor
+    FROM casamentos
+    WHERE id_usuario1 = ? OR id_usuario2 = ?
+`);
+
+const verificarCasamento = db.prepare(`
+    SELECT * FROM casamentos
+    WHERE (id_usuario1 = ? AND id_usuario2 = ?)
+    OR (id_usuario1 = ? AND id_usuario2 = ?)
 `);
 
 // Funções exportadas
@@ -411,6 +506,14 @@ module.exports = {
 
     unbanUser: (idWhatsapp) => {
         return unbanUser.run(idWhatsapp);
+    },
+
+    setUserRole: (idWhatsapp, role) => {
+        return updateUserRole.run(role, idWhatsapp);
+    },
+
+    getAdmins: () => {
+        return getAdmins.all();
     },
 
     // Projetos
@@ -603,6 +706,10 @@ module.exports = {
         return getAllMutes.all();
     },
 
+    obterMutadosGrupo: (idGrupo) => {
+        return getMutesByGroup.all(idGrupo);
+    },
+
     // Funções de Auto-Resposta
     adicionarAutoResposta: (gatilho, resposta, idGrupo, idUsuario) => {
         return insertAutoResposta.run(gatilho.toLowerCase(), resposta, idGrupo, idUsuario);
@@ -615,6 +722,38 @@ module.exports = {
     },
     removerAutoResposta: (gatilho, idGrupo) => {
         return deleteAutoResposta.run(gatilho.toLowerCase(), idGrupo);
+    },
+
+    // Funções de Membros de Grupo
+    registrarAtividadeGrupo: (idGrupo, idUsuario) => {
+        return upsertMembroGrupo.run(idGrupo, idUsuario);
+    },
+
+    obterRankingGrupo: (idGrupo, limite = 10) => {
+        return getRankingGrupo.all(idGrupo, limite);
+    },
+
+    obterInativosGrupo: (idGrupo, dias = 7) => {
+        return getInativosGrupo.all(idGrupo, dias);
+    },
+
+    // Funções de Casamento
+    casarUsuarios: (usuario1, usuario2) => {
+        // Garantir que usuario1 seja sempre o menor para evitar duplicatas
+        const [user1, user2] = usuario1 < usuario2 ? [usuario1, usuario2] : [usuario2, usuario1];
+        return insertCasamento.run(user1, user2);
+    },
+
+    divorciarUsuarios: (usuario1, usuario2) => {
+        return deleteCasamento.run(usuario1, usuario2, usuario2, usuario1);
+    },
+
+    obterConjuge: (usuario) => {
+        return getConjuge.get(usuario, usuario, usuario);
+    },
+
+    verificarCasamento: (usuario1, usuario2) => {
+        return verificarCasamento.get(usuario1, usuario2, usuario2, usuario1);
     },
 
     getStats: () => {
@@ -658,6 +797,7 @@ const initConfig = () => {
         insertConfiguracao.run('dono', 'Administrador');
     }
 
+    // ... (rest of initConfig)
     if (!getConfiguracao.get('contato_dono')) {
         insertConfiguracao.run('contato_dono', 'Não informado');
     }

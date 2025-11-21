@@ -7,24 +7,15 @@ const giphyService = require('../services/giphyService');
  */
 async function execute({ sock, msg, chatJid, senderJid, args }) {
     try {
-        // Extrair menção do usuário
-        let mentionedJid = null;
-
-        // Verificar se há menção via @ no texto
-        if (args.length > 0 && args[0].startsWith('@')) {
-            const numero = args[0].substring(1);
-            mentionedJid = `${numero}@s.whatsapp.net`;
-        }
-
-        // Verificar se há menção na mensagem (contextInfo)
-        if (!mentionedJid && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
-            mentionedJid = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-        }
+        // Extrair menção do usuário do contextInfo
+        const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
 
         // Se não houver menção, retornar erro
-        if (!mentionedJid) {
+        if (!mentionedJid || mentionedJid.length === 0) {
             return '❌ Você precisa marcar alguém para prestar respeitos!\n\nExemplo: !f @usuario';
         }
+
+        const targetJid = mentionedJid[0];
 
         // Buscar GIF aleatório do Giphy
         let videoUrl;
@@ -37,23 +28,15 @@ async function execute({ sock, msg, chatJid, senderJid, args }) {
             console.warn('[Comando F] Usando GIF fallback devido a erro na API:', error.message);
         }
 
-        // Buscar informações do contato mencionado
-        let displayName = mentionedJid.split('@')[0];
-        try {
-            const [contact] = await sock.onWhatsApp(mentionedJid);
-            if (contact && contact.exists) {
-                displayName = mentionedJid.split('@')[0];
-            }
-        } catch (err) {
-            console.log('[Comando F] Não foi possível obter info do contato');
-        }
+        // Extrair número limpo (sem device ID e sem @s.whatsapp.net)
+        const displayName = targetJid.split(':')[0].replace('@s.whatsapp.net', '');
 
         // Enviar vídeo com gifPlayback
         await sock.sendMessage(chatJid, {
             video: { url: videoUrl },
             gifPlayback: true,
             caption: `⚰️ Descanse em paz, @${displayName}.`,
-            mentions: [mentionedJid]
+            mentions: [targetJid]
         });
 
         return null; // Não retorna mensagem de texto adicional

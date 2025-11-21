@@ -51,8 +51,12 @@ async function execute({ sock, msg, args }) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        // Usar yt-dlp diretamente para ter mais controle
-        const ytDlpPath = path.join(__dirname, '..', 'yt-dlp.exe');
+        // Usar yt-dlp via helper
+        const { getYtDlpPath } = require('../utils/ytDlpHelper');
+        const ytDlpPath = getYtDlpPath();
+        if (!ytDlpPath) {
+            throw new Error('yt-dlp não encontrado no sistema ou localmente.');
+        }
         const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
 
         // Otimização: Baixar M4A diretamente para evitar conversão lenta para MP3
@@ -98,7 +102,7 @@ Aguarde o download terminar!`
         // Obter tamanho do arquivo
         const stats = fs.statSync(audioPath);
         const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
-        
+
         console.log(`Enviando áudio: ${audioPath}, Tamanho: ${fileSizeMB} MB`);
 
         // Enviar arquivo de áudio

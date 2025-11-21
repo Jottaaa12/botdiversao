@@ -15,11 +15,14 @@ module.exports = {
             return;
         }
 
-        // Verifica se o remetente é um administrador do grupo
+        // Verifica se o remetente é um administrador do grupo OU admin do bot
         const groupMetadata = await sock.groupMetadata(chat);
         const participants = groupMetadata.participants;
         const senderParticipant = participants.find(p => p.id === from);
-        if (!senderParticipant?.admin) {
+        const permissionLevel = context.permissionLevel;
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+
+        if (!senderParticipant?.admin && !isBotAdmin) {
             await sock.sendMessage(chat, { text: 'Você precisa ser um administrador do grupo para usar este comando.' }, { quoted: msg });
             return;
         }

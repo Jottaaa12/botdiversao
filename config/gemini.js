@@ -1,9 +1,7 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const config = require('../config.json');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Configuração da API do Gemini
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || config.apiKeys.gemini;
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Access your API key as an environment variable (see "Set up your API key" above)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 module.exports = { model };

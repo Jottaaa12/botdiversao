@@ -2,7 +2,7 @@ module.exports = {
     name: 'adv',
     description: 'Adverte um membro. Com 3 advertências, o membro é banido. (!adv @membro [motivo])',
     category: 'adm',
-    permission: 'adm',
+    permission: 'admin',
     async execute({ sock, msg, chatJid, senderJid, args, db }) {
         const isGroup = chatJid.endsWith('@g.us');
         if (!isGroup) {

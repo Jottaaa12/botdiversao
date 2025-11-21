@@ -1,4 +1,4 @@
-const config = require('../config.json');
+const db = require('../database');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // A função agora é ASYNC para poder resolver LIDs
@@ -30,14 +30,19 @@ async function getPermissionLevel(sock, jid) {
         const normalizedJid = jidNormalizedUser(checkJid);
         const phoneNumber = normalizedJid.split('@')[0];
 
-        // Compara com o dono e a lista de administradores do config.json
-        if (config.owner && phoneNumber === config.owner) {
+        // Compara com o dono (env var)
+        const ownerNumber = process.env.OWNER_NUMBER;
+        if (ownerNumber && phoneNumber === ownerNumber) {
             return 'owner';
-        } else if (config.admins && config.admins.includes(phoneNumber)) {
-            return 'admin';
-        } else {
-            return 'user';
         }
+
+        // Verifica role no banco de dados
+        const user = db.obterUsuario(normalizedJid);
+        if (user && (user.role === 'admin' || user.role === 'owner')) {
+            return user.role;
+        }
+
+        return 'user';
     } catch (e) {
         // Se a normalização falhar mesmo após a tentativa de resolução, trata como 'user'.
         console.warn(`[Auth] Não foi possível normalizar o JID "${checkJid}". Tratando como 'user'.`);

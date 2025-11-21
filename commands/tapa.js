@@ -7,31 +7,15 @@ const giphyService = require('../services/giphyService');
  */
 async function execute({ sock, msg, chatJid, senderJid, args }) {
     try {
-        // Extrair menção do usuário
-        let mentionedJid = null;
-
-        // Verificar se há menção via @ no texto
-        if (args.length > 0 && args[0].startsWith('@')) {
-            const numero = args[0].substring(1);
-            mentionedJid = `${numero}@s.whatsapp.net`;
-        }
-
-        // Verificar se há menção na mensagem (contextInfo)
-        if (!mentionedJid && msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
-            mentionedJid = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-            console.log('[Comando Tapa] JID mencionado:', mentionedJid);
-            // Garantir formato correto do JID
-            if (!mentionedJid.includes('@s.whatsapp.net')) {
-                mentionedJid = `${mentionedJid}@s.whatsapp.net`;
-                console.log('[Comando Tapa] JID ajustado para formato correto:', mentionedJid);
-            }
-            console.log('[Comando Tapa] JID mencionado:', mentionedJid);
-        }
+        // Extrair menção do usuário do contextInfo
+        const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
 
         // Se não houver menção, retornar erro
-        if (!mentionedJid) {
+        if (!mentionedJid || mentionedJid.length === 0) {
             return '❌ Você precisa marcar alguém para dar um tapa!\n\nExemplo: !tapa @usuario';
         }
+
+        const targetJid = mentionedJid[0];
 
         // Buscar GIF aleatório do Giphy
         let videoUrl;
@@ -46,19 +30,10 @@ async function execute({ sock, msg, chatJid, senderJid, args }) {
         }
 
         // Log do JID para debug
-        console.log('[Comando Tapa] JID completo capturado:', mentionedJid);
+        console.log('[Comando Tapa] JID completo capturado:', targetJid);
 
-        // Obter nome ou número correto do contato mencionado
-        let displayName = mentionedJid.split('@')[0].split(':')[0]; // fallback número
-        if (sock.contacts && sock.contacts[mentionedJid]) {
-            const contact = sock.contacts[mentionedJid];
-            if (contact.notify) {
-                // notify pode conter número ou nome com @
-                displayName = contact.notify.split('@')[0].split(':')[0];
-            } else if (contact.vname) {
-                displayName = contact.vname;
-            }
-        }
+        // Extrair número limpo (sem device ID e sem @s.whatsapp.net)
+        const displayName = targetJid.split(':')[0].replace('@s.whatsapp.net', '');
         console.log('[Comando Tapa] Nome/numero a mencionar:', displayName);
 
         // Enviar vídeo com gifPlayback
@@ -66,7 +41,7 @@ async function execute({ sock, msg, chatJid, senderJid, args }) {
             video: { url: videoUrl },
             gifPlayback: true,
             caption: `💥 Acorda pra vida, @${displayName}!`,
-            mentions: [mentionedJid]
+            mentions: [targetJid]
         });
 
         return null; // Não retorna mensagem de texto adicional

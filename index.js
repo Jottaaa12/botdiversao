@@ -1,3 +1,4 @@
+require('dotenv').config();
 const pino = require('pino');
 const db = require('./database');
 const { handleConnectionUpdate } = require('./handlers/connectionHandler');

@@ -1,7 +1,4 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const fs = require('fs');
-const path = require('path');
-const configPath = path.join(__dirname, '..', 'config.json');
 
 module.exports = {
     name: 'removeadmin',
@@ -10,7 +7,7 @@ module.exports = {
     category: 'adm',
     permission: 'owner', // Apenas o dono do bot pode remover outros admins do sistema
 
-    async execute({ sock, msg, chatJid, senderJid }) {
+    async execute({ sock, msg, chatJid, senderJid, db }) {
         if (!chatJid.endsWith('@g.us')) {
             return 'Este comando só pode ser usado em grupos.';
         }
@@ -23,11 +20,11 @@ module.exports = {
         if (!targetJid) {
             return 'Você precisa marcar um usuário ou responder a uma mensagem dele para rebaixar.';
         }
-        
+
         if (targetJid === senderJid) {
             return 'Você não pode rebaixar a si mesmo.';
         }
-        
+
         const ownerJid = sock.user.id;
         if (targetJid === jidNormalizedUser(ownerJid)) {
             return 'Você não pode rebaixar o dono do bot.';
@@ -40,7 +37,7 @@ module.exports = {
         } catch (e) {
             return 'Ocorreu um erro ao verificar as informações deste grupo.';
         }
-        
+
         // Verificar se o bot é admin
         const botPnJid = jidNormalizedUser(sock.user.id);
         let botIsAdmin = false;
@@ -62,12 +59,14 @@ module.exports = {
         if (!botIsAdmin) {
             return 'Eu preciso ser um administrador neste grupo para poder rebaixar membros.';
         }
-        
+
         // Verificar se o alvo é de fato um admin
         const targetParticipant = groupMetadata.participants.find(p => p.id === targetJid);
         if (!targetParticipant?.admin) {
-             await sock.sendMessage(chatJid, { text: `O usuário @${targetJid.split('@')[0]} já não é um administrador do grupo.`, mentions: [targetJid] });
-             return null;
+            await sock.sendMessage(chatJid, { text: `O usuário @${targetJid.split('@')[0]} já não é um administrador do grupo.`, mentions: [targetJid] });
+            // Mesmo não sendo admin do grupo, removemos do sistema por garantia
+            db.setUserRole(targetJid, 'user');
+            return null;
         }
 
         // 3. Rebaixar usuário no grupo
@@ -78,18 +77,13 @@ module.exports = {
             return `Ocorreu um erro ao tentar rebaixar @${targetJid.split('@')[0]} no grupo.`;
         }
 
-        // 4. Remover usuário do config.json
+        // 4. Remover usuário de admin do sistema
         try {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             const targetId = targetJid.split('@')[0];
-            
-            if (config.admins.includes(targetId)) {
-                config.admins = config.admins.filter(admin => admin !== targetId);
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-                console.log(`[Comando RemoveAdmin] Usuário ${targetId} removido como admin do sistema.`);
-            }
+            db.setUserRole(targetJid, 'user');
+            console.log(`[Comando RemoveAdmin] Usuário ${targetId} removido como admin do sistema.`);
         } catch (error) {
-            console.error(`[Comando RemoveAdmin] Erro ao remover admin do config.json:`, error);
+            console.error(`[Comando RemoveAdmin] Erro ao remover admin do banco de dados:`, error);
         }
 
         // 5. Enviar mensagem de sucesso

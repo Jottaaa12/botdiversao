@@ -20,9 +20,12 @@ module.exports = {
         const groupMetadata = await sock.groupMetadata(chat);
         const participants = groupMetadata.participants;
 
-        // Verifica se o remetente é um admin do grupo
+        // Verifica se o remetente é um admin do grupo OU admin do bot
         const senderParticipant = participants.find(p => p.id === from);
-        if (!senderParticipant?.admin) {
+        const permissionLevel = context.permissionLevel;
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+
+        if (!senderParticipant?.admin && !isBotAdmin) {
             await sock.sendMessage(chat, { text: 'Você precisa ser um administrador do grupo para usar este comando.' }, { quoted: msg });
             return;
         }
@@ -67,7 +70,7 @@ module.exports = {
             await sock.sendMessage(chat, { text: 'Por favor, marque o usuário, responda a uma mensagem dele ou forneça o número que deseja silenciar.' }, { quoted: msg });
             return;
         }
-        
+
         // Impede de silenciar a si mesmo ou outros administradores
         const targetParticipant = participants.find(p => p.id === targetJid);
         if (targetJid === from) {
@@ -75,7 +78,7 @@ module.exports = {
             return;
         }
         if (targetParticipant?.admin) {
-             await sock.sendMessage(chat, { text: 'Você não pode silenciar outro administrador.' }, { quoted: msg });
+            await sock.sendMessage(chat, { text: 'Você não pode silenciar outro administrador.' }, { quoted: msg });
             return;
         }
 

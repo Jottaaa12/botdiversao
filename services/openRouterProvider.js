@@ -1,14 +1,13 @@
 const OpenAI = require('openai');
-const config = require('../config.json');
 
-const openrouter = new OpenAI({
+const openRouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
-  apiKey: config.apiKeys.openrouter,
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
 
 async function generateOpenRouterResponse(prompt) {
   try {
-    const completion = await openrouter.chat.completions.create({
+    const completion = await openRouter.chat.completions.create({
       model: "mistralai/mistral-7b-instruct:free", // A good free model
       messages: [{ role: "user", content: prompt }],
     });

@@ -51,8 +51,12 @@ async function execute({ sock, msg, args }) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        // Usar yt-dlp diretamente para ter mais controle
-        const ytDlpPath = path.join(__dirname, '..', 'yt-dlp.exe');
+        // Usar yt-dlp via helper
+        const { getYtDlpPath } = require('../utils/ytDlpHelper');
+        const ytDlpPath = getYtDlpPath();
+        if (!ytDlpPath) {
+            throw new Error('yt-dlp não encontrado no sistema ou localmente.');
+        }
         const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
 
         const command = `"${ytDlpPath}" --ffmpeg-location "${path.dirname(ffmpegPath)}" -x --audio-format mp3 --audio-quality 128K -o "${outputTemplate}" "${url}"`;

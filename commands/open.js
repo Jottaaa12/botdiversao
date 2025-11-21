@@ -7,7 +7,7 @@ module.exports = {
     category: 'adm',
     permission: 'admin',
 
-    async execute({ sock, chatJid, senderJid }) {
+    async execute({ sock, chatJid, senderJid, permissionLevel }) {
         if (!chatJid.endsWith('@g.us')) {
             return 'Este comando só pode ser usado em grupos.';
         }
@@ -20,9 +20,11 @@ module.exports = {
             return 'Ocorreu um erro ao verificar as informações deste grupo.';
         }
 
-        // Verificar se quem envia é admin do grupo
+        // Verificar se quem envia é admin do grupo OU admin do bot
         const senderParticipant = groupMetadata.participants.find(p => p.id === senderJid);
-        if (!senderParticipant?.admin) {
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+
+        if (!senderParticipant?.admin && !isBotAdmin) {
             return '❌ Apenas administradores do grupo podem usar este comando.';
         }
 

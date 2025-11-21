@@ -7,7 +7,7 @@ module.exports = {
     category: 'adm',
     permission: 'admin', // Apenas admins do bot podem usar
 
-    async execute({ sock, msg, chatJid, senderJid, db }) {
+    async execute({ sock, msg, chatJid, senderJid, db, permissionLevel }) {
         if (!chatJid.endsWith('@g.us')) {
             return 'Este comando só pode ser usado em grupos.';
         }
@@ -20,7 +20,7 @@ module.exports = {
         if (!targetJid) {
             return 'Você precisa marcar um usuário ou responder a uma mensagem dele para banir.';
         }
-        
+
         if (targetJid === senderJid) {
             return 'Você não pode banir a si mesmo.';
         }
@@ -33,9 +33,11 @@ module.exports = {
             return 'Ocorreu um erro ao verificar as informações deste grupo.';
         }
 
-        // Verificar se quem envia é admin do grupo
+        // Verificar se quem envia é admin do grupo OU admin do bot
         const senderParticipant = groupMetadata.participants.find(p => p.id === senderJid);
-        if (!senderParticipant?.admin) {
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+
+        if (!senderParticipant?.admin && !isBotAdmin) {
             return '❌ Apenas administradores do grupo podem usar este comando.';
         }
 
@@ -44,7 +46,7 @@ module.exports = {
         if (targetParticipant?.admin === 'superadmin') {
             return '❌ Não é possível banir o dono do grupo.';
         }
-        
+
         // Verificar se o alvo não é admin do grupo
         if (targetParticipant?.admin === 'admin') {
             return '❌ Para remover outro administrador, você precisa primeiro rebaixá-lo manualmente.';
@@ -76,7 +78,7 @@ module.exports = {
         try {
             // Primeiro remove do grupo
             await sock.groupParticipantsUpdate(chatJid, [targetJid], 'remove');
-            
+
             // Depois bane do sistema (impede de usar comandos no futuro)
             db.banUser(targetJid);
 

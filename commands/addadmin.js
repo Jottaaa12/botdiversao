@@ -1,7 +1,4 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const fs = require('fs');
-const path = require('path');
-const configPath = path.join(__dirname, '..', 'config.json');
 
 module.exports = {
     name: 'addadmin',
@@ -17,8 +14,9 @@ module.exports = {
      * @param {string[]} context.args
      * @param {string} context.chatJid
      * @param {string} context.senderJid
+     * @param {object} context.db
      */
-    async execute({ sock, msg, args, chatJid, senderJid }) {
+    async execute({ sock, msg, args, chatJid, senderJid, db }) {
         // 1. Verificar se é um grupo
         if (!chatJid.endsWith('@g.us')) {
             return 'Este comando só pode ser usado em grupos.';
@@ -36,13 +34,13 @@ module.exports = {
         } else if (args[0]) {
             const phone = args[0].replace(/[^0-9]/g, '');
             if (!phone) {
-                 return 'Você precisa marcar um usuário, responder a uma mensagem dele ou fornecer um número de telefone válido.';
+                return 'Você precisa marcar um usuário, responder a uma mensagem dele ou fornecer um número de telefone válido.';
             }
             targetJid = `${phone}@s.whatsapp.net`;
         } else {
             return 'Você precisa marcar um usuário, responder a uma mensagem dele ou fornecer o número de telefone.';
         }
-        
+
         const targetId = targetJid.split('@')[0];
 
         // 3. Obter metadados e verificar se o bot é admin
@@ -75,21 +73,22 @@ module.exports = {
             return 'Eu preciso ser um administrador neste grupo para promover outros membros.';
         }
 
-        // 4. Adicionar usuário ao config.json
+        // 4. Adicionar usuário como admin no banco de dados
         try {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            
-            if (!config.admins.includes(targetId)) {
-                config.admins.push(targetId);
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-                console.log(`[Comando AddAdmin] Usuário ${targetId} adicionado como admin do sistema.`);
+            // Verifica se o usuário já existe, se não, cria
+            let user = db.obterUsuario(targetJid);
+            if (!user) {
+                db.salvarUsuario(targetJid, null, []);
             }
+
+            db.setUserRole(targetJid, 'admin');
+            console.log(`[Comando AddAdmin] Usuário ${targetId} adicionado como admin do sistema.`);
         } catch (error) {
-            console.error(`[Comando AddAdmin] Erro ao adicionar admin ao config.json:`, error);
+            console.error(`[Comando AddAdmin] Erro ao adicionar admin ao banco de dados:`, error);
             await sock.sendMessage(chatJid, { text: 'Ocorreu um erro ao salvar a permissão de admin no sistema.' });
             return null;
         }
-        
+
         // 5. Promover usuário no grupo
         try {
             await sock.groupParticipantsUpdate(

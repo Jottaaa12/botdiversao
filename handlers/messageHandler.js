@@ -6,6 +6,8 @@ const path = require('path');
 const { generateResponse } = require('../services/geminiService');
 const { parseNaturalCommand } = require('../services/naturalCommandParser');
 const aiService = require('../services/aiService');
+const { parseSaleMessage, parseClosingMessage } = require('../services/salesService');
+const { handleAntiDelete, handleAntiMute, handleAntiLink, handleAntiEdit } = require('../services/moderationService');
 
 // --- Armazenamento de estado em memória para jogos ---
 const roletaRussaGames = new Map();
@@ -13,6 +15,8 @@ const forcaGames = new Map();
 const joinInProgress = new Map();
 // --- Armazenamento de estado para auto-respostas interativas ---
 const autoRespostaSteps = new Map();
+// --- Armazenamento de pedidos de casamento pendentes ---
+const pedidosCasamento = new Map(); // Estrutura: usuarioAlvo -> { solicitante, chatJid, timestamp }
 // --- Armazenamento de mensagens para antiedit e antidelete ---
 const messageStore = new Map(); // Estrutura: messageId -> { content, sender, chatJid, timestamp }
 
@@ -50,243 +54,7 @@ console.log(`[Command Loader] ${commands.size} comandos/aliases carregados com s
 
 
 
-// Função para converter formato de data DD/MM/YYYY HH:MM para YYYY-MM-DD HH:MM
-function convertDateFormat(dateStr) {
-    // "16/11/2025 19:55" -> "2025-11-16 19:55"
-    const parts = dateStr.split(' ');
-    if (parts.length === 2) {
-        const dateParts = parts[0].split('/');
-        if (dateParts.length === 3) {
-            return `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')} ${parts[1]}`;
-        }
-    }
-    return dateStr; // fallback
-}
-
-// Função para parsear mensagem de venda
-function parseSaleMessage(message) {
-    if (!message.includes('VENDA REALIZADA')) {
-        return null;
-    }
-
-    const lines = message.split('\n');
-    let cliente = '';
-    let pedidoId = null;
-    let dataHora = '';
-    let itens = [];
-    let formaPagamento = '';
-    let valorPago = 0;
-    let troco = 0;
-    let totalGeral = 0;
-
-    let currentSection = '';
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-
-        if (trimmed.includes('Cliente:')) {
-            const index = trimmed.indexOf('Cliente:') + 'Cliente:'.length;
-            cliente = trimmed.substring(index).trim().replace(/^\*|\*$/g, '').trim();
-        } else if (trimmed.includes('Pedido:')) {
-            const index = trimmed.indexOf('Pedido:') + 'Pedido:'.length;
-            pedidoId = parseInt(trimmed.substring(index).trim().replace(/^\*|\*$/g, '').trim());
-        } else if (trimmed.includes('Data/Hora:')) {
-            const index = trimmed.indexOf('Data/Hora:') + 'Data/Hora:'.length;
-            dataHora = trimmed.substring(index).trim().replace(/^\*|\*$/g, '').trim();
-        } else if (trimmed.includes('ITENS')) {
-            currentSection = 'itens';
-        } else if (trimmed.includes('PAGAMENTO')) {
-            currentSection = 'pagamento';
-        } else if (trimmed.includes('TOTAL GERAL:')) {
-            const index = trimmed.indexOf('TOTAL GERAL:') + 'TOTAL GERAL:'.length;
-            const totalStr = trimmed.substring(index).replace('R$', '').trim().replace(/^\*|\*$/g, '').trim();
-            totalGeral = parseFloat(totalStr.replace(',', '.'));
-        } else if (currentSection === 'itens' && trimmed.startsWith('-')) {
-            // Parse item: "AÇAI NO KG (0.248 kg) - R$ 12.40"
-            const itemText = trimmed.substring(1).trim();
-            const parts = itemText.split(' - R$ ');
-            if (parts.length === 2) {
-                const descricao = parts[0].trim();
-                const preco = parseFloat(parts[1].replace(',', '.'));
-                itens.push({ descricao, preco });
-            }
-        } else if (currentSection === 'pagamento') {
-            if (trimmed.includes('Forma:')) {
-                const index = trimmed.indexOf('Forma:') + 'Forma:'.length;
-                formaPagamento = trimmed.substring(index).trim().replace(/^\*|\*$/g, '').trim();
-            } else if (trimmed.includes('Valor Pago:')) {
-                const index = trimmed.indexOf('Valor Pago:') + 'Valor Pago:'.length;
-                const valorStr = trimmed.substring(index).replace('R$', '').trim().replace(/^\*|\*$/g, '').trim();
-                valorPago = parseFloat(valorStr.replace(',', '.'));
-            } else if (trimmed.includes('Troco:')) {
-                const index = trimmed.indexOf('Troco:') + 'Troco:'.length;
-                const trocoStr = trimmed.substring(index).replace('R$', '').trim().replace(/^\*|\*$/g, '').trim();
-                troco = parseFloat(trocoStr.replace(',', '.'));
-            }
-        }
-    }
-
-    // Validar se todos os campos essenciais foram encontrados
-    if (!cliente || !pedidoId || !dataHora || itens.length === 0 || !formaPagamento || totalGeral === 0) {
-        return null;
-    }
-
-    // Converter formato da data para YYYY-MM-DD HH:MM
-    dataHora = convertDateFormat(dataHora);
-
-    return {
-        cliente,
-        pedidoId,
-        dataHora,
-        itens,
-        formaPagamento,
-        valorPago,
-        troco,
-        totalGeral
-    };
-}
-
-// Função para parsear mensagem de fechamento de caixa
-function parseClosingMessage(message) {
-    if (!message.includes('❌ FECHAMENTO DE CAIXA ❌')) {
-        return null;
-    }
-
-    const lines = message.split('\n');
-    let data = '';
-    let operador = '';
-    let horarioInicio = '';
-    let horarioFim = '';
-    let sessao = '';
-    let vendasDinheiro = 0;
-    let qtdVendasDinheiro = 0;
-    let vendasPix = 0;
-    let qtdVendasPix = 0;
-    let totalVendas = 0;
-    let acaiVendido = 0;
-    let movimentacoes = [];
-    let totalGeral = 0;
-    let fiados = [];
-    let saldoInicial = 0;
-    let valorEsperado = 0;
-    let valorContado = 0;
-    let diferenca = 0;
-    let tipoDiferenca = '';
-
-    let currentSection = '';
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-
-        if (trimmed.startsWith('📅 Data:')) {
-            data = trimmed.replace('📅 Data:', '').trim();
-        } else if (trimmed.startsWith('👤 Operador:')) {
-            operador = trimmed.replace('👤 Operador:', '').trim();
-        } else if (trimmed.startsWith('🕐 Horário:')) {
-            const horarioStr = trimmed.replace('🕐 Horário:', '').trim();
-            const partes = horarioStr.split(' às ');
-            if (partes.length === 2) {
-                horarioInicio = partes[0].trim();
-                horarioFim = partes[1].trim();
-            }
-        } else if (trimmed.startsWith('🆔 Sessão:')) {
-            sessao = trimmed.replace('🆔 Sessão:', '').trim();
-        } else if (trimmed.startsWith('VENDAS REALIZADAS:')) {
-            currentSection = 'vendas';
-        } else if (trimmed.startsWith('💰 TOTAL DAS VENDAS:')) {
-            const totalStr = trimmed.replace('💰 TOTAL DAS VENDAS:', '').replace('R$', '').trim();
-            totalVendas = parseFloat(totalStr.replace(',', '.'));
-        } else if (trimmed.startsWith('⚖ Açaí Vendido:')) {
-            const acaiStr = trimmed.replace('⚖ Açaí Vendido:', '').replace('kg', '').trim();
-            acaiVendido = parseFloat(acaiStr.replace(',', '.'));
-        } else if (trimmed.startsWith('💸 MOVIMENTAÇÕES DE CAIXA:')) {
-            currentSection = 'movimentacoes';
-        } else if (trimmed.startsWith('💵 TOTAL GERAL')) {
-            currentSection = 'total_geral';
-        } else if (trimmed.startsWith('📝 FIADO (CRÉDITO):')) {
-            currentSection = 'fiados';
-        } else if (trimmed.startsWith('💵 RESUMO FINAL:')) {
-            currentSection = 'resumo';
-        } else if (currentSection === 'vendas' && trimmed.startsWith('• Dinheiro:')) {
-            const dinheiroStr = trimmed.replace('• Dinheiro:', '').replace('R$', '').trim();
-            const partes = dinheiroStr.split('(');
-            if (partes.length === 2) {
-                vendasDinheiro = parseFloat(partes[0].trim().replace(',', '.'));
-                qtdVendasDinheiro = parseInt(partes[1].replace('vendas)', '').trim());
-            }
-        } else if (currentSection === 'vendas' && trimmed.startsWith('• PIX:')) {
-            const pixStr = trimmed.replace('• PIX:', '').replace('R$', '').trim();
-            const partes = pixStr.split('(');
-            if (partes.length === 2) {
-                vendasPix = parseFloat(partes[0].trim().replace(',', '.'));
-                qtdVendasPix = parseInt(partes[1].replace('vendas)', '').trim());
-            }
-        } else if (currentSection === 'movimentacoes' && trimmed.startsWith('•')) {
-            const movText = trimmed.substring(1).trim();
-            if (movText !== 'Nenhuma movimentação registrada.') {
-                movimentacoes.push({ descricao: movText });
-            }
-        } else if (currentSection === 'total_geral' && trimmed.includes('Vendas ± Movimentações):')) {
-            const totalStr = trimmed.split(':')[1].replace('R$', '').trim();
-            totalGeral = parseFloat(totalStr.replace(',', '.'));
-        } else if (currentSection === 'fiados' && trimmed.startsWith('•')) {
-            const fiadoText = trimmed.substring(1).trim();
-            const partes = fiadoText.split(': R$ ');
-            if (partes.length === 2) {
-                const cliente = partes[0].trim();
-                const valor = parseFloat(partes[1].replace(',', '.'));
-                fiados.push({ cliente, valor });
-            }
-        } else if (currentSection === 'resumo' && trimmed.startsWith('• Saldo Inicial:')) {
-            const saldoStr = trimmed.replace('• Saldo Inicial:', '').replace('R$', '').trim();
-            saldoInicial = parseFloat(saldoStr.replace(',', '.'));
-        } else if (currentSection === 'resumo' && trimmed.startsWith('• Valor Esperado:')) {
-            const esperadoStr = trimmed.replace('• Valor Esperado:', '').replace('R$', '').trim();
-            valorEsperado = parseFloat(esperadoStr.replace(',', '.'));
-        } else if (currentSection === 'resumo' && trimmed.startsWith('• Valor Contado:')) {
-            const contadoStr = trimmed.replace('• Valor Contado:', '').replace('R$', '').trim();
-            valorContado = parseFloat(contadoStr.replace(',', '.'));
-        } else if (currentSection === 'resumo' && trimmed.startsWith('⚠ Diferença:')) {
-            const diferencaStr = trimmed.replace('⚠ Diferença:', '').trim();
-            if (diferencaStr.includes('Sobra:')) {
-                tipoDiferenca = 'sobra';
-                const valorStr = diferencaStr.replace('Sobra:', '').replace('+R$', '').trim();
-                diferenca = parseFloat(valorStr.replace(',', '.'));
-            } else if (diferencaStr.includes('Falta:')) {
-                tipoDiferenca = 'falta';
-                const valorStr = diferencaStr.replace('Falta:', '').replace('-R$', '').trim();
-                diferenca = -parseFloat(valorStr.replace(',', '.'));
-            }
-        }
-    }
-
-    // Validar se todos os campos essenciais foram encontrados
-    if (!data || !operador || !sessao || totalVendas === 0) {
-        return null;
-    }
-
-    return {
-        data,
-        operador,
-        horarioInicio,
-        horarioFim,
-        sessao,
-        vendasDinheiro,
-        qtdVendasDinheiro,
-        vendasPix,
-        qtdVendasPix,
-        totalVendas,
-        acaiVendido,
-        movimentacoes,
-        totalGeral,
-        fiados,
-        saldoInicial,
-        valorEsperado,
-        valorContado,
-        diferenca,
-        tipoDiferenca
-    };
-}
+// Funções de parsing movidas para services/salesService.js
 
 function quickCommandFilter(message) {
     const urlRegex = /(https?:\/\/[^\s]+)/;
@@ -328,32 +96,34 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
     }
 
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
-    const senderJid = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+    let senderJid = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+
+    // Normalizar JID para garantir que usamos o número de telefone, não o LID
+    if (senderJid && senderJid.includes('@lid')) {
+        try {
+            // Tenta resolver o LID para PN usando o repositório de sinais do Baileys
+            const pnJid = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+            if (pnJid) {
+                console.log(`[MessageHandler] Convertendo LID ${senderJid} para PN ${pnJid}`);
+                senderJid = pnJid; // Atualiza para o JID do telefone
+            } else {
+                console.log(`[MessageHandler] Não foi possível resolver o PN para o LID ${senderJid}`);
+            }
+        } catch (e) {
+            console.error(`[MessageHandler] Erro ao normalizar LID ${senderJid}:`, e);
+        }
+    }
+
     const chatJid = msg.key.remoteJid;
     const message = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
     const prefixo = db.obterConfiguracao('prefixo') || '/';
     const messageId = msg.key.id;
     const hasAttachment = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage || msg.message?.audioMessage);
 
+    console.log(`[MessageHandler] Processando mensagem de ${senderJid} em ${chatJid}. Conteúdo: ${message.substring(0, 50)}...`);
+
     // --- DETECÇÃO DE MENSAGENS DELETADAS (PROTOCOL MESSAGE) ---
-    if (msg.message?.protocolMessage?.type === 0) { // Type 0 = REVOKE (delete)
-        const deletedMessageId = msg.message.protocolMessage.key.id;
-        const antideleteEnabled = isGroup && db.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
-
-        if (antideleteEnabled && messageStore.has(deletedMessageId)) {
-            const deletedMsg = messageStore.get(deletedMessageId);
-            const senderName = deletedMsg.sender.split('@')[0];
-
-            try {
-                await sock.sendMessage(chatJid, {
-                    text: `🗑️ *@${senderName}* deletou esta mensagem:\n\n"${deletedMsg.content}"`,
-                    mentions: [deletedMsg.sender]
-                });
-                console.log(`[ANTIDELETE] Mensagem deletada recuperada em ${chatJid}`);
-            } catch (error) {
-                console.error('[ANTIDELETE] Erro ao reenviar mensagem deletada:', error);
-            }
-        }
+    if (await handleAntiDelete(sock, msg, isGroup, chatJid, messageStore, db)) {
         return; // Não processa mais
     }
 
@@ -390,15 +160,8 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
     // (Movida para após a verificação de fromMe para evitar loop infinito)
 
     // --- VERIFICAÇÃO DE USUÁRIO MUTADO ---
-    if (isGroup && await db.isMuted(senderJid, chatJid)) {
-        console.log(`[MUTE] Mensagem de usuário mutado (${senderJid}) no grupo (${chatJid}) detectada. Apagando mensagem.`);
-        try {
-            await sock.sendMessage(chatJid, { delete: msg.key });
-            return; // Interrompe o processamento da mensagem mutada
-        } catch (error) {
-            console.error('[MUTE] Erro ao apagar mensagem de usuário mutado:', error);
-            // Continua a execução para evitar que o bot trave, mas a mensagem não será apagada
-        }
+    if (await handleAntiMute(sock, msg, isGroup, chatJid, senderJid, db)) {
+        return; // Interrompe o processamento
     }
     // --- FIM DA VERIFICAÇÃO DE USUÁRIO MUTADO ---
 
@@ -587,65 +350,15 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
 
         db.atualizarHistoricoUsuario(senderJid, historico);
 
-        // ----------------- INÍCIO: LÓGICA ANTI-LINK (VERSÃO FINAL) -----------------
-        if (isGroup && message) {
-            const antilinkEnabled = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
-            if (antilinkEnabled) {
-                const urlRegex = /https?:\/\/[^\s]+/;
-                if (urlRegex.test(message)) {
-                    try {
-                        const groupMetadata = await sock.groupMetadata(chatJid);
-
-                        // Verifica se o remetente é admin
-                        const senderParticipant = groupMetadata.participants.find(p => p.id === senderJid);
-                        const isSenderGroupAdmin = senderParticipant?.admin === 'admin' || senderParticipant?.admin === 'superadmin';
-                        const userBotPermission = await getPermissionLevel(sock, senderJid);
-                        const isSenderBotAdmin = userBotPermission === 'owner' || userBotPermission === 'admin';
-
-                        // Se o remetente NÃO for admin, aplicar a punição
-                        if (!isSenderGroupAdmin && !isSenderBotAdmin) {
-                            // --- Verificação de Admin do Bot (Lógica Corrigida) ---
-                            const botPnJid = jidNormalizedUser(sock.user.id);
-                            let botIsAdmin = false;
-                            for (const p of groupMetadata.participants) {
-                                if (p.admin === 'admin' || p.admin === 'superadmin') {
-                                    let adminId = p.id;
-                                    if (adminId.endsWith('@lid')) {
-                                        try {
-                                            const resolved = await sock.signalRepository.lidMapping.getPNForLID(adminId);
-                                            if (resolved) adminId = resolved;
-                                        } catch (e) { /* Ignora se não conseguir resolver */ }
-                                    }
-                                    if (jidNormalizedUser(adminId) === botPnJid) {
-                                        botIsAdmin = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            // --- Fim da Verificação ---
-
-                            if (botIsAdmin) {
-                                console.log(`[Anti-Link] Link detectado de não-admin (${senderJid}). Removendo...`);
-                                await sock.sendMessage(chatJid, { delete: msg.key });
-                                await sock.groupParticipantsUpdate(chatJid, [senderJid], 'remove');
-                                await sock.sendMessage(chatJid, {
-                                    text: `🚫 *@${senderJid.split('@')[0]}* foi removido por enviar um link.`,
-                                    mentions: [senderJid]
-                                });
-                                return;
-                            } else {
-                                console.log(`[Anti-Link] Ação cancelada. O bot não tem permissões de admin no grupo para remover membros.`);
-                            }
-                        } else {
-                            console.log(`[Anti-Link] Link enviado por um administrador (${senderJid}). Nenhuma ação foi tomada.`);
-                        }
-                    } catch (error) {
-                        console.error('[Anti-Link] Erro na execução do anti-link:', error);
-                    }
-                }
-            }
+        // Registrar atividade no grupo (para !ranking e !fantasmas)
+        if (isGroup) {
+            db.registrarAtividadeGrupo(chatJid, senderJid);
         }
-        // ----------------- FIM: LÓGICA ANTI-LINK -----------------
+
+        // ----------------- INÍCIO: LÓGICA ANTI-LINK (VERSÃO FINAL) -----------------
+        if (await handleAntiLink(sock, msg, isGroup, chatJid, senderJid, message, db, getPermissionLevel)) {
+            return; // Link detectado e punido
+        }
         // ----------------- FIM: LÓGICA ANTI-LINK -----------------
 
         // Verificar se é uma mensagem de venda e armazenar automaticamente
@@ -733,6 +446,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             console.log(`[Auth Debug] Verificando permissão para ID: ${senderJid}. Usando a chave: ${senderJid.split('@')[0]}`);
 
             const commandName = args.shift().toLowerCase();
+            console.log(`[Debug] Prefixo: '${prefixo}', Message: '${message}', CommandName: '${commandName}'`);
+            console.log(`[Debug] Commands Map Size: ${commands.size}`);
+            console.log(`[Debug] Has 'ajuda'? ${commands.has('ajuda')}. Has '${commandName}'? ${commands.has(commandName)}`);
 
             const command = commands.get(commandName);
 
@@ -741,6 +457,8 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                 // Verificação de Permissão
                 const requiredPermission = command.permission || 'user'; // 'user' como padrão
                 const userPermissionLevel = await getPermissionLevel(sock, senderJid);
+
+                console.log(`[Debug] Comando: ${commandName}, Permissão Necessária: ${requiredPermission}, Nível do Usuário: ${userPermissionLevel}`);
 
                 const permissionHierarchy = {
                     'user': 0,
@@ -757,6 +475,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                         userPermissionLevel !== 'admin' &&
                         userPermissionLevel !== 'owner' &&
                         command.name !== 'so_adm') {
+                        console.log(`[Debug] Modo Só Adm ativo e usuário não é admin. Ignorando.`);
                         // Bot fica silencioso - não dá nenhuma resposta
                         return; // Interrompe o processamento sem enviar mensagem
                     }
@@ -765,6 +484,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
 
                 if (permissionHierarchy[userPermissionLevel] >= permissionHierarchy[requiredPermission]) {
                     try {
+                        console.log(`[Debug] Iniciando execução do comando ${commandName}...`);
                         await sock.sendPresenceUpdate('composing', chatJid);
                         // Executa o comando passando um objeto de contexto padronizado
                         response = await command.execute({
@@ -788,6 +508,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                             autoRespostaSteps,
                             forcaGames
                         });
+                        console.log(`[Debug] Comando ${commandName} executado. Resposta:`, response ? 'Sim (conteúdo)' : 'Não/Vazia');
                         // Incrementar contador de comandos executados
                         db.incrementarContador('comandos_executados');
                     } catch (error) {
@@ -797,6 +518,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                         await sock.sendPresenceUpdate('paused', chatJid);
                     }
                 } else {
+                    console.log(`[Debug] Permissão negada para ${senderJid} em ${commandName}`);
                     response = "Você não tem permissão para usar este comando.";
                 }
             } else {
@@ -945,58 +667,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
 
 // Função para lidar com atualizações de mensagens (edições)
 async function handleMessageUpdate(sock, updates) {
-    for (const update of updates) {
-        const { key, update: messageUpdate } = update;
-
-        // Verificar se é uma edição de mensagem
-        if (messageUpdate?.message) {
-            const messageId = key.id;
-            const chatJid = key.remoteJid;
-            const isGroup = chatJid.endsWith('@g.us');
-
-            console.log('[ANTIEDIT DEBUG] Mensagem editada detectada!');
-            console.log('[ANTIEDIT DEBUG] Message ID:', messageId);
-
-            // Verificar se o antiedit está ativo
-            const antieditEnabled = isGroup && db.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
-            console.log('[ANTIEDIT DEBUG] Anti-edit ativo?', antieditEnabled);
-            console.log('[ANTIEDIT DEBUG] Mensagem está no store?', messageStore.has(messageId));
-
-            if (antieditEnabled && messageStore.has(messageId)) {
-                const originalMsg = messageStore.get(messageId);
-                const senderJid = key.participant || key.remoteJid;
-                const senderName = senderJid.split('@')[0];
-
-                // Extrair o novo conteúdo da mensagem editada
-                // O conteúdo editado está em editedMessage.message, não diretamente em message
-                const editedContent = messageUpdate.message?.editedMessage?.message?.conversation ||
-                    messageUpdate.message?.editedMessage?.message?.extendedTextMessage?.text ||
-                    '';
-
-                console.log('[ANTIEDIT DEBUG] Conteúdo original:', originalMsg.content);
-                console.log('[ANTIEDIT DEBUG] Conteúdo editado:', editedContent);
-
-                // Verificar se houve mudança no conteúdo
-                if (originalMsg.content !== editedContent && editedContent) {
-                    try {
-                        await sock.sendMessage(chatJid, {
-                            text: `✏️ *@${senderName}* editou a mensagem!\n\n📜 *Original:*\n"${originalMsg.content}"\n\n📝 *Editada para:*\n"${editedContent}"`,
-                            mentions: [senderJid]
-                        });
-                        console.log(`[ANTIEDIT] Edição revelada em ${chatJid}`);
-
-                        // Atualizar o conteúdo armazenado
-                        messageStore.set(messageId, {
-                            ...originalMsg,
-                            content: editedContent
-                        });
-                    } catch (error) {
-                        console.error('[ANTIEDIT] Erro ao revelar mensagem editada:', error);
-                    }
-                }
-            }
-        }
-    }
+    await handleAntiEdit(sock, updates, messageStore, db);
 }
 
 module.exports = { handleMessage, handleMessageUpdate };

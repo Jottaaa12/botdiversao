@@ -28,14 +28,15 @@ async function executeAntiLink({ sock, msg, senderJid, message, args, commandNam
         const participants = groupMetadata.participants;
         const admins = participants.filter(p => p.admin === 'admin' || p.admin === 'superadmin').map(p => p.id);
 
-        // Verificar se o usuário é admin do grupo
-        if (!admins.includes(senderJid)) {
+        // Verificar se o usuário é admin do grupo OU admin do bot
+        const isBotAdmin = permissionLevel === 'admin' || permissionLevel === 'owner';
+        if (!admins.includes(senderJid) && !isBotAdmin) {
             return '❌ Apenas administradores do grupo podem usar este comando.';
         }
 
         // Obter o status atual do anti-link
         const currentStatus = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true'; // Retorna true ou false
-        
+
         // Determinar o novo status
         const newStatus = !currentStatus;
         const newStatusString = newStatus ? 'true' : 'false';
