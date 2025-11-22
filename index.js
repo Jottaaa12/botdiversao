@@ -7,6 +7,7 @@ const { handleGroupUpdate, handleParticipantUpdate } = require('./handlers/group
 
 let currentSock = null; // Variável para armazenar a instância do sock
 let isRestarting = false; // Flag para controlar o reinício manual
+let agendamentosIniciados = false; // Flag para garantir que agendamentos sejam iniciados apenas uma vez
 
 async function initializeBot() {
     const {
@@ -51,6 +52,15 @@ async function initializeBot() {
     sock.ev.on('group-participants.update', async (update) => {
         await handleParticipantUpdate(sock, update);
     });
+
+    // Iniciar agendamentos de listas APENAS UMA VEZ
+    // Isso evita duplicação de agendamentos a cada reconexão
+    if (!agendamentosIniciados) {
+        const { iniciarAgendamentos } = require('./services/listaScheduler');
+        iniciarAgendamentos(sock, db);
+        agendamentosIniciados = true;
+        console.log('[Bot Manager] Agendamentos iniciados pela primeira vez.');
+    }
 
     return sock;
 }

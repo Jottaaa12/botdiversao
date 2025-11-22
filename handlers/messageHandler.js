@@ -506,7 +506,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                             commands,
                             txpvConfirmations,
                             autoRespostaSteps,
-                            forcaGames
+                            autoRespostaSteps,
+                            forcaGames,
+                            isGroup // Passando isGroup explicitamente
                         });
                         console.log(`[Debug] Comando ${commandName} executado. Resposta:`, response ? 'Sim (conteúdo)' : 'Não/Vazia');
                         // Incrementar contador de comandos executados
@@ -542,7 +544,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                         prefixo,
                         usuario,
                         permissionLevel,
-                        db
+                        permissionLevel,
+                        db,
+                        isGroup // Passando isGroup explicitamente
                     });
                 } catch (error) {
                     console.error(`[Erro ao Executar Comando] 'ler_documento':`, error);
@@ -621,7 +625,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                                 getPermissionLevel,
                                 joinInProgress,
                                 restartBot, // Adicionado aqui
-                                commands
+                                restartBot, // Adicionado aqui
+                                commands,
+                                isGroup // Passando isGroup explicitamente
                             });
                         } catch (error) {
                             console.error(`[Erro ao Executar Comando Identificado] '${commandName}':`, error);

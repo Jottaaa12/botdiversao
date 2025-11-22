@@ -204,27 +204,79 @@ const createTables = () => {
             PRIMARY KEY (id_usuario1, id_usuario2)
         )
     `);
+
+    // Tabela de listas de grupo
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS listas_grupo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_grupo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+            criado_por TEXT NOT NULL,
+            ativa BOOLEAN DEFAULT TRUE,
+            UNIQUE(id_grupo, ativa) -- Apenas uma lista ativa por grupo
+        )
+    `);
+
+    // Tabela de membros de lista
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS membros_lista (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_lista INTEGER NOT NULL,
+            id_usuario TEXT NOT NULL,
+            ordem INTEGER NOT NULL,
+            adicionado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (id_lista) REFERENCES listas_grupo(id),
+            UNIQUE(id_lista, id_usuario)
+        )
+    `);
+
+    // Tabela de configurações de lista
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS config_lista (
+            id_grupo TEXT PRIMARY KEY,
+            titulo_padrao TEXT,
+            horario_envio TEXT, -- formato HH:MM
+            envio_ativo BOOLEAN DEFAULT FALSE,
+            horario_abertura TEXT, -- formato HH:MM
+            dias_abertura TEXT, -- ex: "1,2,3,4,5"
+            abertura_ativa BOOLEAN DEFAULT FALSE
+        )
+    `);
 };
 
 // Inicializar banco
 createTables();
 
-// Adicionar a coluna 'banned' à tabela 'usuarios' se ela não existir
+// Migrações
 try {
     const info = db.pragma('table_info(usuarios)');
     const columns = info.map(col => col.name);
     if (!columns.includes('banned')) {
-        console.log("A coluna 'banned' não existe na tabela 'usuarios'. Adicionando...");
         db.exec('ALTER TABLE usuarios ADD COLUMN banned BOOLEAN DEFAULT FALSE');
-        console.log("Coluna 'banned' adicionada com sucesso.");
     }
     if (!columns.includes('role')) {
-        console.log("A coluna 'role' não existe na tabela 'usuarios'. Adicionando...");
         db.exec("ALTER TABLE usuarios ADD COLUMN role TEXT DEFAULT 'user'");
-        console.log("Coluna 'role' adicionada com sucesso.");
     }
+
+    // Migração config_lista
+    const infoConfig = db.pragma('table_info(config_lista)');
+    const columnsConfig = infoConfig.map(col => col.name);
+    if (!columnsConfig.includes('horario_abertura')) {
+        console.log("Adicionando coluna 'horario_abertura' em 'config_lista'...");
+        db.exec('ALTER TABLE config_lista ADD COLUMN horario_abertura TEXT');
+    }
+    if (!columnsConfig.includes('dias_abertura')) {
+        console.log("Adicionando coluna 'dias_abertura' em 'config_lista'...");
+        db.exec('ALTER TABLE config_lista ADD COLUMN dias_abertura TEXT');
+    }
+    if (!columnsConfig.includes('abertura_ativa')) {
+        console.log("Adicionando coluna 'abertura_ativa' em 'config_lista'...");
+        db.exec('ALTER TABLE config_lista ADD COLUMN abertura_ativa BOOLEAN DEFAULT FALSE');
+    }
+
 } catch (error) {
-    console.error("Erro ao migrar a tabela 'usuarios':", error);
+    console.error("Erro nas migrações:", error);
 }
 
 // Prepared statements para usuários
@@ -473,6 +525,66 @@ const verificarCasamento = db.prepare(`
     SELECT * FROM casamentos
     WHERE (id_usuario1 = ? AND id_usuario2 = ?)
     OR (id_usuario1 = ? AND id_usuario2 = ?)
+`);
+
+// Prepared statements para listas
+const insertConfigLista = db.prepare(`
+    INSERT OR REPLACE INTO config_lista (id_grupo, titulo_padrao, horario_envio, envio_ativo, horario_abertura, dias_abertura, abertura_ativa)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+`);
+
+const getConfigLista = db.prepare(`
+    SELECT * FROM config_lista WHERE id_grupo = ?
+`);
+
+const insertLista = db.prepare(`
+    INSERT INTO listas_grupo (id_grupo, titulo, criado_por, ativa)
+    VALUES (?, ?, ?, TRUE)
+`);
+
+const getListaAtiva = db.prepare(`
+    SELECT * FROM listas_grupo WHERE id_grupo = ? AND ativa = TRUE
+`);
+
+const desativarListasGrupo = db.prepare(`
+    UPDATE listas_grupo SET ativa = FALSE WHERE id_grupo = ?
+`);
+
+const deleteLista = db.prepare(`
+    DELETE FROM listas_grupo WHERE id = ?
+`);
+
+const deleteMembrosDaLista = db.prepare(`
+    DELETE FROM membros_lista WHERE id_lista = ?
+`);
+
+const insertMembroLista = db.prepare(`
+    INSERT INTO membros_lista (id_lista, id_usuario, ordem)
+    VALUES (?, ?, ?)
+`);
+
+const deleteMembroLista = db.prepare(`
+    DELETE FROM membros_lista WHERE id_lista = ? AND id_usuario = ?
+`);
+
+const getMembrosLista = db.prepare(`
+    SELECT * FROM membros_lista WHERE id_lista = ? ORDER BY ordem ASC
+`);
+
+const getProximaOrdemLista = db.prepare(`
+    SELECT COALESCE(MAX(ordem), 0) + 1 as proxima_ordem FROM membros_lista WHERE id_lista = ?
+`);
+
+const getAllListasAtivas = db.prepare(`
+    SELECT * FROM listas_grupo WHERE ativa = TRUE
+`);
+
+const getGruposComEnvioAtivo = db.prepare(`
+    SELECT * FROM config_lista WHERE envio_ativo = TRUE
+`);
+
+const getGruposComAberturaAtiva = db.prepare(`
+    SELECT * FROM config_lista WHERE abertura_ativa = TRUE
 `);
 
 // Funções exportadas
@@ -756,6 +868,106 @@ module.exports = {
         return verificarCasamento.get(usuario1, usuario2, usuario2, usuario1);
     },
 
+    // Funções de Lista
+    definirTituloPadraoLista: (idGrupo, titulo) => {
+        const config = getConfigLista.get(idGrupo);
+        if (config) {
+            return insertConfigLista.run(idGrupo, titulo, config.horario_envio, config.envio_ativo, config.horario_abertura, config.dias_abertura, config.abertura_ativa);
+        } else {
+            return insertConfigLista.run(idGrupo, titulo, null, 0, null, null, 0);
+        }
+    },
+
+    obterTituloPadraoLista: (idGrupo) => {
+        const config = getConfigLista.get(idGrupo);
+        return config ? config.titulo_padrao : null;
+    },
+
+    definirHorarioEnvioLista: (idGrupo, horario) => {
+        const config = getConfigLista.get(idGrupo);
+        if (config) {
+            return insertConfigLista.run(idGrupo, config.titulo_padrao, horario, 1, config.horario_abertura, config.dias_abertura, config.abertura_ativa);
+        } else {
+            return insertConfigLista.run(idGrupo, null, horario, 1, null, null, 0);
+        }
+    },
+
+    obterHorarioEnvioLista: (idGrupo) => {
+        const config = getConfigLista.get(idGrupo);
+        return config ? config.horario_envio : null;
+    },
+
+    definirHorarioAberturaLista: (idGrupo, horario, dias) => {
+        const config = getConfigLista.get(idGrupo);
+        if (config) {
+            return insertConfigLista.run(idGrupo, config.titulo_padrao, config.horario_envio, config.envio_ativo, horario, dias, 1);
+        } else {
+            return insertConfigLista.run(idGrupo, null, null, 0, horario, dias, 1);
+        }
+    },
+
+    obterHorarioAberturaLista: (idGrupo) => {
+        const config = getConfigLista.get(idGrupo);
+        return config ? { horario: config.horario_abertura, dias: config.dias_abertura } : null;
+    },
+
+    obterGruposComEnvioAtivo: () => {
+        return getGruposComEnvioAtivo.all();
+    },
+
+    obterGruposComAberturaAtiva: () => {
+        return getGruposComAberturaAtiva.all();
+    },
+
+    criarLista: (idGrupo, titulo, idCriador) => {
+        // Desativa qualquer lista ativa anterior
+        desativarListasGrupo.run(idGrupo);
+        // Cria nova lista
+        return insertLista.run(idGrupo, titulo, idCriador);
+    },
+
+    obterListaAtiva: (idGrupo) => {
+        return getListaAtiva.get(idGrupo);
+    },
+
+    adicionarMembroLista: (idLista, idUsuario) => {
+        // Verifica se já está na lista
+        const membros = getMembrosLista.all(idLista);
+        const jaExiste = membros.find(m => m.id_usuario === idUsuario);
+        if (jaExiste) {
+            return null; // Já está na lista
+        }
+        // Obtém próxima ordem
+        const { proxima_ordem } = getProximaOrdemLista.get(idLista);
+        return insertMembroLista.run(idLista, idUsuario, proxima_ordem);
+    },
+
+    removerMembroLista: (idLista, idUsuario) => {
+        return deleteMembroLista.run(idLista, idUsuario);
+    },
+
+    obterMembrosLista: (idLista) => {
+        return getMembrosLista.all(idLista);
+    },
+
+    excluirLista: (idLista) => {
+        // Remove membros primeiro
+        deleteMembrosDaLista.run(idLista);
+        // Remove lista
+        return deleteLista.run(idLista);
+    },
+
+    resetarListasAtivas: () => {
+        // Obtém todas as listas ativas
+        const listasAtivas = getAllListasAtivas.all();
+        // Exclui cada uma
+        for (const lista of listasAtivas) {
+            deleteMembrosDaLista.run(lista.id);
+            deleteLista.run(lista.id);
+        }
+        return listasAtivas.length;
+    },
+
     getStats: () => {
         const totalUsers = db.prepare('SELECT COUNT(*) FROM usuarios').get()['COUNT(*)'];
         const bannedUsers = db.prepare('SELECT COUNT(*) FROM usuarios WHERE banned = TRUE').get()['COUNT(*)'];
@@ -780,6 +992,12 @@ module.exports = {
     },
 
     // Fechar banco
+    encerrarLista: (idLista) => {
+        // Remove membros primeiro
+        deleteMembrosDaLista.run(idLista);
+        // Remove lista
+        return deleteLista.run(idLista);
+    },
     fechar: () => {
         db.close();
     }

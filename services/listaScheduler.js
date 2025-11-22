@@ -1,0 +1,127 @@
+const cron = require('node-cron');
+
+function iniciarAgendamentos(sock, db) {
+    console.log('[Scheduler] Iniciando serviço de agendamento de listas...');
+
+    // 1. Reset automático à meia-noite (00:00)
+    // Expressão cron: 0 0 * * * (Minuto 0, Hora 0, Qualquer dia, Qualquer mês, Qualquer dia da semana)
+    cron.schedule('0 0 * * *', () => {
+        console.log('[Scheduler] Executando reset diário de listas...');
+        try {
+            const count = db.resetarListasAtivas();
+            console.log(`[Scheduler] Reset concluído. ${count} listas foram encerradas.`);
+        } catch (error) {
+            console.error('[Scheduler] Erro ao resetar listas:', error);
+        }
+    }, {
+        timezone: "America/Sao_Paulo"
+    });
+
+    // 2. Envio automático e Abertura automática
+    // Verifica a cada minuto
+    cron.schedule('* * * * *', async () => {
+        const agora = new Date();
+        // Formata hora atual para HH:MM
+        const horas = String(agora.getHours()).padStart(2, '0');
+        const minutos = String(agora.getMinutes()).padStart(2, '0');
+        const horarioAtual = `${horas}:${minutos}`;
+        const diaSemana = agora.getDay(); // 0 (Dom) a 6 (Sab)
+
+        try {
+            // --- ENVIO AUTOMÁTICO ---
+            const gruposEnvio = db.obterGruposComEnvioAtivo();
+
+            for (const config of gruposEnvio) {
+                if (config.horario_envio === horarioAtual) {
+                    const chatJid = config.id_grupo;
+                    const listaAtiva = db.obterListaAtiva(chatJid);
+
+                    if (listaAtiva) {
+                        console.log(`[Scheduler] Enviando lista automática para o grupo ${chatJid}...`);
+                        await enviarListaAtualizada(sock, chatJid, db, listaAtiva.id);
+                    }
+                }
+            }
+
+            // --- ABERTURA AUTOMÁTICA ---
+            const gruposAbertura = db.obterGruposComAberturaAtiva();
+
+            for (const config of gruposAbertura) {
+                // Verifica horário
+                if (config.horario_abertura === horarioAtual) {
+                    // Verifica dias (padrão 1,2,3,4,5 se null)
+                    const diasConfigurados = config.dias_abertura ? config.dias_abertura.split(',').map(Number) : [1, 2, 3, 4, 5];
+
+                    if (diasConfigurados.includes(diaSemana)) {
+                        const chatJid = config.id_grupo;
+
+                        // Verifica se já existe lista ativa
+                        const listaAtiva = db.obterListaAtiva(chatJid);
+                        if (!listaAtiva) {
+                            console.log(`[Scheduler] Abrindo lista automática para ${chatJid}...`);
+
+                            const tituloPadrao = db.obterTituloPadraoLista(chatJid) || "Lista do Dia";
+                            // Usamos o ID do bot como criador se possível, ou um placeholder
+                            const botId = sock.user?.id || 'sistema';
+
+                            db.criarLista(chatJid, tituloPadrao, botId);
+                            const novaLista = db.obterListaAtiva(chatJid);
+
+                            await enviarListaAtualizada(sock, chatJid, db, novaLista.id);
+
+                            await sock.sendMessage(chatJid, {
+                                text: '✅ Lista aberta automaticamente!'
+                            });
+                        }
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('[Scheduler] Erro ao processar agendamentos:', error);
+        }
+    }, {
+        timezone: "America/Sao_Paulo"
+    });
+
+    console.log('[Scheduler] Agendamentos configurados com sucesso.');
+}
+
+// Função auxiliar para enviar a lista
+async function enviarListaAtualizada(sock, chatJid, db, idLista) {
+    const lista = db.obterListaAtiva(chatJid);
+    if (!lista) return;
+
+    const membros = db.obterMembrosLista(lista.id);
+
+    const dataCriacao = new Date(lista.data_criacao);
+    const dataFormatada = dataCriacao.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    let mensagem = `📋 *${lista.titulo.toUpperCase()}*\n`;
+    mensagem += `📅 ${dataFormatada}\n\n`;
+
+    if (membros.length === 0) {
+        mensagem += "_A lista está vazia._\n";
+    } else {
+        for (let i = 0; i < membros.length; i++) {
+            const membro = membros[i];
+            const usuarioDb = db.obterUsuario(membro.id_usuario);
+            const numero = membro.id_usuario.split(':')[0].replace('@s.whatsapp.net', '');
+            const nome = usuarioDb?.nome || numero;
+
+            mensagem += `${i + 1}. ${nome}\n`;
+        }
+    }
+
+    mensagem += `\n━━━━━━━━━━━━━━━━━━━\n`;
+    mensagem += `ℹ️ Para entrar: !l seu nome\n`;
+    mensagem += `ℹ️ Para sair: !l sair`;
+
+    try {
+        await sock.sendMessage(chatJid, { text: mensagem });
+    } catch (e) {
+        console.error(`[Scheduler] Falha ao enviar mensagem para ${chatJid}:`, e);
+    }
+}
+
+module.exports = { iniciarAgendamentos };

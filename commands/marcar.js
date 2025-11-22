@@ -28,8 +28,9 @@ async function executeHidetag({ sock, msg, message, args, commandName, prefixo, 
         const participants = groupMetadata.participants;
         const admins = participants.filter(p => p.admin === 'admin' || p.admin === 'superadmin').map(p => p.id);
 
-        // Verificar se o usuário é admin do grupo
-        if (!admins.includes(senderJid)) {
+        // Verificar se o usuário é admin do grupo OU dono do bot
+        const isOwner = permissionLevel === 'owner';
+        if (!admins.includes(senderJid) && !isOwner) {
             return '❌ Apenas administradores do grupo podem usar este comando.';
         }
 
