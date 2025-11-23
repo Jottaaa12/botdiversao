@@ -9,41 +9,40 @@ async function execute({ sock, msg, args, senderJid, chatJid, prefixo, db, autoR
         return processarPassoInterativo(sock, msg, args, senderJid, chatJid, db, autoRespostaSteps);
     }
 
-    // --- COMANDO NO PV ---
-    if (!isGroup) {
-        // Inicia fluxo de seleção de grupo
-        try {
-            const groups = await sock.groupFetchAllParticipating();
-            const groupsList = Object.values(groups).map(g => ({ id: g.id, subject: g.subject }));
+    // --- SUBCOMANDOS QUE FUNCIONAM EM QUALQUER LUGAR (PV OU GRUPO) ---
 
-            if (groupsList.length === 0) {
-                return '❌ Não encontrei nenhum grupo onde eu sou participante.';
-            }
-
-            autoRespostaSteps.set(senderJid, {
-                step: 'selecionar_grupo',
-                gruposDisponiveis: groupsList
-            });
-
-            let msg = '🤖 *CONFIGURAR AUTO-RESPOSTA*\n\nSelecione o grupo onde deseja configurar o gatilho:\n\n';
-            groupsList.forEach((g, index) => {
-                msg += `${index + 1} - ${g.subject}\n`;
-            });
-            msg += '\n_Responda com o número do grupo ou "cancelar" para sair._';
-
-            // Envia a mensagem diretamente ao invés de retornar
-            await sock.sendMessage(chatJid, { text: msg });
-            return; // Retorna vazio para não enviar duplicado
-        } catch (error) {
-            console.error('Erro ao buscar grupos:', error);
-            return '❌ Erro ao buscar lista de grupos.';
-        }
-    }
-
-    // --- COMANDO NO GRUPO ---
-
-    // Listar gatilhos
+    // Listar gatilhos - funciona no PV também
     if (!fullText || fullText.toLowerCase() === 'listar') {
+        // Se estiver no PV, precisa selecionar o grupo primeiro
+        if (!isGroup) {
+            try {
+                const groups = await sock.groupFetchAllParticipating();
+                const groupsList = Object.values(groups).map(g => ({ id: g.id, subject: g.subject }));
+
+                if (groupsList.length === 0) {
+                    return '❌ Não encontrei nenhum grupo onde eu sou participante.';
+                }
+
+                autoRespostaSteps.set(senderJid, {
+                    step: 'selecionar_grupo_listar',
+                    gruposDisponiveis: groupsList
+                });
+
+                let msg = '🤖 *LISTAR AUTO-RESPOSTAS*\n\nSelecione o grupo:\n\n';
+                groupsList.forEach((g, index) => {
+                    msg += `${index + 1} - ${g.subject}\n`;
+                });
+                msg += '\n_Responda com o número do grupo ou "cancelar" para sair._';
+
+                await sock.sendMessage(chatJid, { text: msg });
+                return;
+            } catch (error) {
+                console.error('Erro ao buscar grupos:', error);
+                return '❌ Erro ao buscar lista de grupos.';
+            }
+        }
+
+        // Se estiver no grupo, lista direto
         const triggers = db.groupInteraction.listarAutoRespostas(chatJid);
         if (triggers.length === 0) {
             return 'ℹ️ Não há auto-respostas configuradas neste grupo.';
@@ -59,6 +58,38 @@ async function execute({ sock, msg, args, senderJid, chatJid, prefixo, db, autoR
     // Remover gatilho
     if (fullText.toLowerCase().startsWith('remover ') || fullText.toLowerCase().startsWith('deletar ')) {
         const triggerToRemove = fullText.split(' ').slice(1).join(' ').toLowerCase();
+
+        // Se estiver no PV, precisa selecionar o grupo primeiro
+        if (!isGroup) {
+            try {
+                const groups = await sock.groupFetchAllParticipating();
+                const groupsList = Object.values(groups).map(g => ({ id: g.id, subject: g.subject }));
+
+                if (groupsList.length === 0) {
+                    return '❌ Não encontrei nenhum grupo onde eu sou participante.';
+                }
+
+                autoRespostaSteps.set(senderJid, {
+                    step: 'selecionar_grupo_remover',
+                    gruposDisponiveis: groupsList,
+                    triggerToRemove: triggerToRemove
+                });
+
+                let msg = `🤖 *REMOVER AUTO-RESPOSTA*\n\nGatilho: *"${triggerToRemove}"*\n\nSelecione o grupo:\n\n`;
+                groupsList.forEach((g, index) => {
+                    msg += `${index + 1} - ${g.subject}\n`;
+                });
+                msg += '\n_Responda com o número do grupo ou "cancelar" para sair._';
+
+                await sock.sendMessage(chatJid, { text: msg });
+                return;
+            } catch (error) {
+                console.error('Erro ao buscar grupos:', error);
+                return '❌ Erro ao buscar lista de grupos.';
+            }
+        }
+
+        // Se estiver no grupo, remove direto
         const result = db.groupInteraction.removerAutoResposta(triggerToRemove, chatJid);
         if (result.changes > 0) {
             return `✅ Auto-resposta para *"${triggerToRemove}"* removida com sucesso.`;
@@ -67,8 +98,7 @@ async function execute({ sock, msg, args, senderJid, chatJid, prefixo, db, autoR
         }
     }
 
-    // Adicionar gatilho (Lógica Rápida com Separadores)
-    // Ex: !gatilho oi | olá | contains
+    // --- COMANDO NO PV (ADICIONAR GATILHO) ---
     if (fullText.includes('|')) {
         const parts = fullText.split('|').map(p => p.trim());
         const trigger = parts[0].toLowerCase();
@@ -115,6 +145,53 @@ async function processarPassoInterativo(sock, msg, args, senderJid, chatJid, db,
     if (textoUsuario.toLowerCase() === 'cancelar') {
         autoRespostaSteps.delete(senderJid);
         return '❌ Configuração cancelada.';
+    }
+
+    // --- PASSO: SELECIONAR GRUPO PARA LISTAR ---
+    if (estado.step === 'selecionar_grupo_listar') {
+        const index = parseInt(textoUsuario) - 1;
+        const grupos = estado.gruposDisponiveis;
+
+        if (isNaN(index) || index < 0 || index >= grupos.length) {
+            return '❌ Número inválido. Selecione um número da lista acima.';
+        }
+
+        const grupoSelecionado = grupos[index];
+        autoRespostaSteps.delete(senderJid); // Limpa o estado
+
+        // Lista os gatilhos do grupo selecionado
+        const triggers = db.groupInteraction.listarAutoRespostas(grupoSelecionado.id);
+        if (triggers.length === 0) {
+            return `ℹ️ Não há auto-respostas configuradas no grupo *${grupoSelecionado.subject}*.`;
+        }
+        let response = `*Auto-Respostas em ${grupoSelecionado.subject}:*\n\n`;
+        triggers.forEach(t => {
+            const tipo = t.match_type === 'contains' ? '🔤 Contém' : '🎯 Exata';
+            response += `🔹 *${t.gatilho}* (${tipo}) ➡️ ${t.resposta.substring(0, 20)}${t.resposta.length > 20 ? '...' : ''}\n`;
+        });
+        return response;
+    }
+
+    // --- PASSO: SELECIONAR GRUPO PARA REMOVER ---
+    if (estado.step === 'selecionar_grupo_remover') {
+        const index = parseInt(textoUsuario) - 1;
+        const grupos = estado.gruposDisponiveis;
+
+        if (isNaN(index) || index < 0 || index >= grupos.length) {
+            return '❌ Número inválido. Selecione um número da lista acima.';
+        }
+
+        const grupoSelecionado = grupos[index];
+        const triggerToRemove = estado.triggerToRemove;
+        autoRespostaSteps.delete(senderJid); // Limpa o estado
+
+        // Remove o gatilho do grupo selecionado
+        const result = db.groupInteraction.removerAutoResposta(triggerToRemove, grupoSelecionado.id);
+        if (result.changes > 0) {
+            return `✅ Auto-resposta para *"${triggerToRemove}"* removida com sucesso do grupo *${grupoSelecionado.subject}*.`;
+        } else {
+            return `❌ Gatilho *"${triggerToRemove}"* não encontrado no grupo *${grupoSelecionado.subject}*.`;
+        }
     }
 
     // --- PASSO: SELECIONAR GRUPO (APENAS PV) ---

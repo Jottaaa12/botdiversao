@@ -19,10 +19,14 @@ const autoRespostaSteps = new Map();
 const agendamentoSteps = new Map();
 // --- Armazenamento de estado para lista horário interativa ---
 const listaHorarioSteps = new Map();
+// --- Armazenamento de estado para lista abertura interativa ---
+const listaAberturaSteps = new Map();
 // --- Armazenamento de pedidos de casamento pendentes ---
 const pedidosCasamento = new Map(); // Estrutura: usuarioAlvo -> { solicitante, chatJid, timestamp }
 // --- Armazenamento de mensagens para antiedit e antidelete ---
 const messageStore = new Map(); // Estrutura: messageId -> { content, sender, chatJid, timestamp }
+// --- Armazenamento para deduplicação de comandos ---
+const commandDeduplication = new Map();
 
 // --- Carregador Dinâmico de Comandos ---
 const commands = new Map();
@@ -98,6 +102,11 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         return;
     }
 
+    // Ignorar mensagens próprias e broadcasts de status LOGO NO INÍCIO
+    if (msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') {
+        return;
+    }
+
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     let senderJid = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
 
@@ -140,6 +149,24 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         console.log(`[Debug Agendamento] Mapa tem ${agendamentoSteps.size} itens. Chaves: ${Array.from(agendamentoSteps.keys()).join(', ')}`);
         console.log(`[Debug Agendamento] SenderJid atual: ${senderJid}. Está no mapa? ${agendamentoSteps.has(senderJid)}`);
     }
+
+    // --- DEDUPLICAÇÃO DE COMANDOS ---
+    // Evita processar a mesma mensagem (ou comando idêntico) múltiplas vezes em curto período
+    const commandKey = `${senderJid}:${message.trim()}`;
+    const lastTime = commandDeduplication.get(commandKey);
+    const now = Date.now();
+
+    if (lastTime && (now - lastTime < 2000)) { // 2 segundos de debounce
+        console.log(`[Deduplicação] Ignorando comando duplicado de ${senderJid}: ${message.substring(0, 20)}...`);
+        return;
+    }
+    commandDeduplication.set(commandKey, now);
+
+    // Limpeza periódica do mapa de deduplicação (opcional, mas bom para evitar vazamento de memória)
+    if (commandDeduplication.size > 1000) {
+        commandDeduplication.clear();
+    }
+
 
     // --- DETECÇÃO DE MENSAGENS DELETADAS (PROTOCOL MESSAGE) ---
     if (await handleAntiDelete(sock, msg, isGroup, chatJid, messageStore, db)) {
@@ -444,6 +471,31 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             }
         }
 
+        // --- LÓGICA DE TRATAMENTO DE LISTA ABERTURA INTERATIVA ---
+        if (listaAberturaSteps.has(senderJid)) {
+            const command = commands.get('lista_abertura');
+            if (command) {
+                const args = message.trim().split(' ');
+                const response = await command.execute({
+                    sock,
+                    msg,
+                    args,
+                    senderJid,
+                    chatJid,
+                    prefixo,
+                    db,
+                    listaAberturaSteps,
+                    isGroup,
+                    permissionLevel // Passing permissionLevel
+                });
+
+                if (response && typeof response === 'string') {
+                    await sock.sendMessage(chatJid, { text: response });
+                }
+                return; // Interrompe o processamento normal
+            }
+        }
+
         // --- LÓGICA DE TRATAMENTO DE AUTO-RESPOSTA INTERATIVA ---
         if (autoRespostaSteps.has(senderJid)) {
             const command = commands.get('autoresposta');
@@ -570,6 +622,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                             agendamentoSteps,
                             forcaGames,
                             listaHorarioSteps,
+                            listaAberturaSteps,
                             isGroup
                         });
                         console.log(`[Debug] Comando ${commandName} executado. Resposta:`, response ? 'Sim (conteúdo)' : 'Não/Vazia');

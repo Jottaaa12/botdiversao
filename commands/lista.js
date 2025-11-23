@@ -6,7 +6,7 @@ module.exports = {
     category: 'grupo',
     description: 'Gerencia a lista de presença do grupo',
     permission: 'user',
-    async execute({ sock, chatJid, args, senderJid, db, isGroup, permissionLevel }) {
+    async execute({ sock, msg, chatJid, args, senderJid, db, isGroup, permissionLevel }) {
         // Verifica se é um grupo
         if (!isGroup) {
             await sock.sendMessage(chatJid, {
@@ -338,11 +338,11 @@ Cancela a abertura automática completamente.`;
                 return;
             }
 
-            if (db.encerrarLista) {
+            if (db.list.encerrarLista) {
                 db.list.encerrarLista(listaParaFechar.id);
             } else {
                 // Fallback se o método não existir (embora devesse)
-                console.error('Método encerrarLista não encontrado no db');
+                console.error('Método encerrarLista não encontrado no db.list');
             }
 
             await sock.sendMessage(chatJid, { text: '✅ Lista encerrada com sucesso!' });
@@ -520,23 +520,28 @@ Cancela a abertura automática completamente.`;
             }
 
             // Tenta obter o nome do usuário
+            console.log(`[Lista Debug] Tentando obter nome para ${senderJid}`);
+            console.log(`[Lista Debug] msg existe? ${!!msg}, msg.pushName existe? ${!!(msg && msg.pushName)}, valor: ${msg && msg.pushName}`);
+
             const usuario = db.user.obterUsuario(senderJid);
             let nomeUsuario = null;
 
             if (usuario && usuario.nome) {
                 // Tem nome salvo no banco
                 nomeUsuario = usuario.nome;
+                console.log(`[Lista] Nome obtido do banco de dados: ${nomeUsuario}`);
             } else if (senderJid.includes('@s.whatsapp.net')) {
-                // Tenta pegar o nome do contato do WhatsApp
+                // Tenta pegar o pushName da mensagem (nome do perfil do WhatsApp)
                 try {
-                    const pushName = msg.pushName;
-                    if (pushName && pushName.trim()) {
-                        nomeUsuario = pushName;
+                    if (msg && msg.pushName && msg.pushName.trim()) {
+                        nomeUsuario = msg.pushName.trim();
+                        console.log(`[Lista] Nome obtido via pushName: ${nomeUsuario}`);
+
                         // Salva o nome no banco para próximas vezes
                         db.user.atualizarNomeUsuario(senderJid, nomeUsuario);
                     }
                 } catch (e) {
-                    console.error('Erro ao obter pushName:', e);
+                    console.error('[Lista] Erro ao obter pushName:', e);
                 }
             }
 
