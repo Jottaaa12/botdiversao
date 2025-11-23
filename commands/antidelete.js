@@ -12,16 +12,16 @@ module.exports = {
 
         try {
             // Verifica o estado atual
-            const modoAtual = db.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
+            const modoAtual = db.config.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
 
             // Alterna o estado (toggle)
             if (modoAtual) {
                 // Se está ativo, desativa
-                db.salvarConfiguracaoGrupo(chatJid, 'antidelete', 'false');
+                db.config.salvarConfiguracaoGrupo(chatJid, 'antidelete', 'false');
                 return '✅ *Anti-Delete DESATIVADO*\n\n🗑️ Membros podem deletar mensagens livremente.';
             } else {
                 // Se está desativado, ativa
-                db.salvarConfiguracaoGrupo(chatJid, 'antidelete', 'true');
+                db.config.salvarConfiguracaoGrupo(chatJid, 'antidelete', 'true');
                 return '✅ *Anti-Delete ATIVADO*\n\n🔍 Quando alguém deletar uma mensagem, ela será reenviada pelo bot.';
             }
         } catch (error) {

@@ -1,14 +1,14 @@
 const geminiService = require('./geminiService');
 const openRouterProvider = require('./openRouterProvider');
 
-async function generateChatResponse(message, usuario, prefixo = '/') {
+async function generateResponse(message, usuario, prefixo = '/', userId) {
     try {
         console.log('[AIService] Tentando provedor primário: Gemini');
-        const geminiResponse = await geminiService.generateResponse(message, usuario, prefixo);
+        const geminiResponse = await geminiService.generateResponse(message, usuario, prefixo, userId);
 
         // Check for Gemini's specific error message indicating overload
-        if (geminiResponse.includes('Upsi! Parece que meu cérebro de IA está um pouco sobrecarregado')) {
-             throw new Error('Gemini is overloaded');
+        if (geminiResponse.includes('meus circuitos estão sobrecarregados')) {
+            throw new Error('Gemini is overloaded');
         }
         return geminiResponse;
 
@@ -35,4 +35,4 @@ async function generateChatResponse(message, usuario, prefixo = '/') {
     }
 }
 
-module.exports = { generateChatResponse };
+module.exports = { generateResponse };

@@ -37,7 +37,7 @@ async function getPermissionLevel(sock, jid) {
         }
 
         // Verifica role no banco de dados
-        const user = db.obterUsuario(normalizedJid);
+        const user = db.user.obterUsuario(normalizedJid);
         if (user && (user.role === 'admin' || user.role === 'owner')) {
             return user.role;
         }

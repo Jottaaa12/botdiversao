@@ -80,7 +80,7 @@ module.exports = {
             await sock.groupParticipantsUpdate(chatJid, [targetJid], 'remove');
 
             // Depois bane do sistema (impede de usar comandos no futuro)
-            db.banUser(targetJid);
+            db.user.banUser(targetJid);
 
             await sock.sendMessage(chatJid, {
                 text: `✅ Usuário @${targetJid.split('@')[0]} foi removido do grupo e banido do sistema.`,

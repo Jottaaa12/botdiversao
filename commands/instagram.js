@@ -14,11 +14,12 @@ function isValidUrl(string) {
 }
 
 // Função auxiliar para baixar arquivo
-async function downloadFile(url, filepath) {
+async function downloadFile(url, filepath, headers = {}) {
     const response = await axios({
         method: 'GET',
         url: url,
-        responseType: 'stream'
+        responseType: 'stream',
+        headers: headers
     });
 
     return new Promise((resolve, reject) => {
@@ -72,7 +73,18 @@ async function execute({ sock, msg, args }) {
                 const filePath = path.join(tempDir, fileName);
 
                 console.log(`Baixando item ${i + 1} de ${mediaItems.length}: ${mediaItem.url}`);
-                await downloadFile(mediaItem.url, filePath);
+                console.log('Keys do mediaItem:', Object.keys(mediaItem));
+                if (mediaItem.headers) {
+                    console.log('Headers encontrados no mediaItem:', JSON.stringify(mediaItem.headers));
+                } else {
+                    console.log('Nenhum header encontrado no mediaItem.');
+                }
+
+                // Usar headers fornecidos pela API ou um User-Agent padrão
+                const headers = mediaItem.headers || { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' };
+                console.log('Headers finais usados:', JSON.stringify(headers));
+
+                await downloadFile(mediaItem.url, filePath, headers);
 
                 if (fs.existsSync(filePath)) {
                     if (isVideo) {

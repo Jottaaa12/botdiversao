@@ -24,7 +24,8 @@ async function execute({ sock, msg, args }) {
     else if (videoInCurrent) { mediaToProcess = videoInCurrent; mediaType = 'video'; }
 
     // --- Paths para arquivos temporários ---
-    const tempDir = path.join(__dirname, '../../temp');
+    // Usa o diretório do projeto (um nível acima de commands)
+    const tempDir = path.join(__dirname, '../temp');
     if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
     }
@@ -82,7 +83,7 @@ async function execute({ sock, msg, args }) {
             });
 
             await sock.sendMessage(jid, { sticker: { url: outputPath } }, { quoted: msg });
-            
+
             // Limpeza
             fs.unlinkSync(inputPath);
             fs.unlinkSync(outputPath);
@@ -108,7 +109,7 @@ async function execute({ sock, msg, args }) {
                     <text x="50%" y="50%" dy=".35em" class="title">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>
                 </svg>
             `;
-            
+
             const svgBuffer = Buffer.from(svgText);
 
             const processedImage = await sharp(svgBuffer)

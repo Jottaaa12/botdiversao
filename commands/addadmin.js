@@ -76,9 +76,9 @@ module.exports = {
         // 4. Adicionar usuário como admin no banco de dados
         try {
             // Verifica se o usuário já existe, se não, cria
-            let user = db.obterUsuario(targetJid);
+            let user = db.user.obterUsuario(targetJid);
             if (!user) {
-                db.salvarUsuario(targetJid, null, []);
+                db.user.salvarUsuario(targetJid, null, []);
             }
 
             db.setUserRole(targetJid, 'admin');

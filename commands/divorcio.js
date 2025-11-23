@@ -8,7 +8,7 @@ module.exports = {
         const senderJid = msg.key.participant || msg.key.remoteJid;
 
         // Verificar se o usuário está casado
-        const conjugeAtual = db.obterConjuge(senderJid);
+        const conjugeAtual = db.groupInteraction.obterConjuge(senderJid);
         if (!conjugeAtual) {
             await sock.sendMessage(chatJid, {
                 text: '❌ Você não está casado(a)!'

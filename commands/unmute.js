@@ -45,13 +45,13 @@ module.exports = {
         }
 
         try {
-            const isUserMuted = await db.isMuted(targetJid, chat);
+            const isUserMuted = await db.groupInteraction.isMuted(targetJid, chat);
             if (!isUserMuted) {
                 await sock.sendMessage(chat, { text: `Usuário @${targetJid.split('@')[0]} não está silenciado.`, mentions: [targetJid] }, { quoted: msg });
                 return;
             }
 
-            await db.unmuteUser(targetJid, chat);
+            await db.groupInteraction.unmuteUser(targetJid, chat);
             await sock.sendMessage(chat, { text: `Usuário @${targetJid.split('@')[0]} foi dessilenciado.`, mentions: [targetJid] }, { quoted: msg });
         } catch (error) {
             console.error('Erro ao dessilenciar usuário:', error);

@@ -11,7 +11,7 @@ function execute({ args }) {
             return 'Valor inválido. Use um número.';
         }
 
-        db.salvarDadoFinanceiro(categoria, valor, periodo);
+        db.financial.salvarDadoFinanceiro(categoria, valor, periodo);
         return `Dado financeiro salvo: ${categoria} R$${valor} para ${periodo}`;
     }
     return 'Uso: /salvar_dado categoria valor periodo\nEx: /salvar_dado vendas 10000 janeiro';

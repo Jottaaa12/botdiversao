@@ -23,12 +23,12 @@ function verificarAlertas(dados) {
 
             // Alerta se último valor é 20% menor que o penúltimo
             if (penultimo > 0 && ultimo < penultimo * 0.8) {
-                alertas.push(`⚠️ ${cat}: Queda significativa de R$${penultimo} para R$${ultimo} (${((ultimo/penultimo - 1) * 100).toFixed(1)}%)`);
+                alertas.push(`⚠️ ${cat}: Queda significativa de R$${penultimo} para R$${ultimo} (${((ultimo / penultimo - 1) * 100).toFixed(1)}%)`);
             }
 
             // Alerta se valor está abaixo da média
             if (ultimo < media * 0.7) {
-                alertas.push(`⚠️ ${cat}: Valor atual R$${ultimo} está ${((media/ultimo - 1) * 100).toFixed(1)}% abaixo da média (R$${media.toFixed(2)})`);
+                alertas.push(`⚠️ ${cat}: Valor atual R$${ultimo} está ${((media / ultimo - 1) * 100).toFixed(1)}% abaixo da média (R$${media.toFixed(2)})`);
             }
         }
     });
@@ -42,9 +42,9 @@ async function execute({ args }) {
 
     let dados;
     if (periodo) {
-        dados = db.obterDadosFinanceirosPorPeriodo(periodo);
+        dados = db.financial.obterDadosFinanceirosPorPeriodo(periodo);
     } else {
-        dados = db.obterTodosDadosFinanceiros();
+        dados = db.financial.obterTodosDadosFinanceiros();
     }
 
     if (dados.length === 0) {

@@ -19,10 +19,10 @@ module.exports = {
 
         try {
             // Salva a advertência no banco de dados
-            db.salvarAdvertencia(chatJid, targetJid, reason, senderJid);
+            db.groupInteraction.salvarAdvertencia(chatJid, targetJid, reason, senderJid);
 
             // Verifica o número de advertências
-            const warnings = db.obterAdvertenciasUsuario(chatJid, targetJid);
+            const warnings = db.groupInteraction.obterAdvertenciasUsuario(chatJid, targetJid);
             const warningCount = warnings.length;
 
             if (warningCount >= 3) {
@@ -36,7 +36,7 @@ module.exports = {
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], 'remove');
 
                 // Limpa as advertências do usuário do banco de dados após o ban
-                db.limparAdvertenciasUsuario(chatJid, targetJid);
+                db.groupInteraction.limparAdvertenciasUsuario(chatJid, targetJid);
 
             } else {
                 // Apenas envia a mensagem de advertência

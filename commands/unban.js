@@ -14,7 +14,7 @@ function executeUnban({ args }) {
     }
 
     try {
-        db.unbanUser(userToUnban);
+        db.user.unbanUser(userToUnban);
         console.log(`[Comando Unban] Usuário ${userToUnban} foi desbanido.`);
         return `✅ Usuário *${userToUnban}* foi desbanido com sucesso.`;
     } catch (error) {

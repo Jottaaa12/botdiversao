@@ -11,7 +11,7 @@ module.exports = {
         }
 
         try {
-            db.salvarConfiguracaoGrupo(chatJid, 'bot_ativo', 'true');
+            db.config.salvarConfiguracaoGrupo(chatJid, 'bot_ativo', 'true');
             return '✅ O bot foi ativado neste grupo e responderá aos comandos novamente.';
         } catch (error) {
             console.error('[ON Command Error]', error);

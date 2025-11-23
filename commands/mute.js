@@ -108,7 +108,7 @@ module.exports = {
         // Se args[1] não foi fornecido, duration e expirationTime permanecem null, resultando em mute permanente.
 
         try {
-            await db.muteUser(targetJid, chat, expirationTime);
+            await db.groupInteraction.muteUser(targetJid, chat, expirationTime);
             await sock.sendMessage(chat, { text: `Usuário @${targetJid.split('@')[0]} foi silenciado ${durationString}.`, mentions: [targetJid] }, { quoted: msg });
         } catch (error) {
             console.error('Erro ao silenciar usuário:', error);

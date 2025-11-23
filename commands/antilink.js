@@ -35,14 +35,14 @@ async function executeAntiLink({ sock, msg, senderJid, message, args, commandNam
         }
 
         // Obter o status atual do anti-link
-        const currentStatus = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true'; // Retorna true ou false
+        const currentStatus = db.config.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true'; // Retorna true ou false
 
         // Determinar o novo status
         const newStatus = !currentStatus;
         const newStatusString = newStatus ? 'true' : 'false';
 
         // Salvar configuração no banco
-        db.salvarConfiguracaoGrupo(chatJid, 'antilink', newStatusString);
+        db.config.salvarConfiguracaoGrupo(chatJid, 'antilink', newStatusString);
 
         if (newStatus) {
             return `✅ *Anti-Link ativado!* 🚫\n\nO bot agora removerá automaticamente usuários que enviarem links neste grupo.\n\nPara desativar, use: ${prefixo}antilink (ou ${prefixo}link)`;

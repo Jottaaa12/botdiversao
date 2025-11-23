@@ -36,7 +36,7 @@ function execute({ args }) {
     const ano = partes[2];
 
     const dataBusca = `${ano}-${mes}-${dia}`;
-    const todasVendas = db.obterTodasVendas();
+    const todasVendas = db.financial.obterTodasVendas();
     const vendas = todasVendas.filter(v => {
         const vendaDate = extractDateFromDataHora(v.data_hora);
         return vendaDate === dataBusca;

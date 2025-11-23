@@ -8,8 +8,8 @@ const db = require('../database');
  */
 function executeListProjects({ usuario }) {
     try {
-        const projetos = db.obterProjetosUsuario(usuario.id);
-        
+        const projetos = db.project.obterProjetosUsuario(usuario.id);
+
         if (!projetos || projetos.length === 0) {
             return 'Você ainda não tem nenhum projeto cadastrado. Use `/projeto Título: Descrição` para criar um.';
         }

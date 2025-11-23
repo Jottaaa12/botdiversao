@@ -17,12 +17,12 @@ module.exports = {
         const targetJid = mentionedJids[0];
 
         try {
-            const currentWarnings = db.obterAdvertenciasUsuario(chatJid, targetJid);
+            const currentWarnings = db.groupInteraction.obterAdvertenciasUsuario(chatJid, targetJid);
             if (currentWarnings.length === 0) {
                 return `O membro @${targetJid.split('@')[0]} não tem advertências para remover.`;
             }
 
-            db.removerUltimaAdvertencia(chatJid, targetJid);
+            db.groupInteraction.removerUltimaAdvertencia(chatJid, targetJid);
 
             const newWarningsCount = currentWarnings.length - 1;
             const response = `✅ A advertência mais recente de @${targetJid.split('@')[0]} foi removida. Total agora: *${newWarningsCount}/3*.`;

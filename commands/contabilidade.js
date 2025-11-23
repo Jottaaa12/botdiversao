@@ -7,7 +7,7 @@ function execute({ args }) {
         const vendas = parseFloat(args.find(p => p.startsWith('vendas:'))?.split(':')[1] || 0);
         const custos = parseFloat(args.find(p => p.startsWith('custos:'))?.split(':')[1] || 0);
         const lucros = vendas - custos;
-        db.salvarContabilidade(mesAno, vendas, custos, lucros);
+        db.financial.salvarContabilidade(mesAno, vendas, custos, lucros);
         return `Dados de contabilidade para ${mesAno} salvos: Vendas R$${vendas}, Custos R$${custos}, Lucros R$${lucros}`;
     }
     return 'Uso: /contabilidade AAAA-MM vendas:VALOR custos:VALOR';

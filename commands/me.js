@@ -11,7 +11,7 @@ module.exports = {
         const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid;
         const alvoJid = (mentionedJid && mentionedJid.length > 0) ? mentionedJid[0] : senderJid;
 
-        const usuario = db.obterUsuario(alvoJid);
+        const usuario = db.user.obterUsuario(alvoJid);
 
         if (!usuario) {
             await sock.sendMessage(chatJid, {
@@ -47,7 +47,7 @@ module.exports = {
 
         // Status de casamento
         perfil += `\n💕 *STATUS RELACIONAMENTO*\n`;
-        const conjuge = db.obterConjuge(alvoJid);
+        const conjuge = db.groupInteraction.obterConjuge(alvoJid);
         if (conjuge) {
             const numeroConjuge = conjuge.conjuge.split(':')[0].replace('@s.whatsapp.net', '');
             const dataCasamento = new Date(conjuge.data_casamento);
@@ -66,7 +66,7 @@ module.exports = {
             perfil += `\n📊 *ESTATÍSTICAS NO GRUPO*\n`;
 
             // Buscar dados do membro no grupo
-            const ranking = db.obterRankingGrupo(chatJid, 100);
+            const ranking = db.groupInteraction.obterRankingGrupo(chatJid, 100);
             const membroGrupo = ranking.find(m => m.id_usuario === alvoJid);
 
             if (membroGrupo) {

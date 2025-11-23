@@ -27,15 +27,15 @@ async function executeAnalyzeProject({ args, msg, sock, usuario }) {
 
     // 2. Combinar descrição do comando com conteúdo do anexo
     if (conteudoAnexo) {
-        projetoDescricao = projetoDescricao 
-            ? `${projetoDescricao}\n\n--- CONTEÚDO DO ANEXO ---\n${conteudoAnexo}` 
+        projetoDescricao = projetoDescricao
+            ? `${projetoDescricao}\n\n--- CONTEÚDO DO ANEXO ---\n${conteudoAnexo}`
             : conteudoAnexo;
     }
 
     // 3. Verificar se o argumento é um ID de um projeto existente
-    const projetosUsuario = db.obterProjetosUsuario(usuario.id);
+    const projetosUsuario = db.project.obterProjetosUsuario(usuario.id);
     const projetoExistente = projetosUsuario.find(p => p.id == parseInt(commandBody));
-    
+
     // Se for um ID válido e não havia outra descrição, usa a descrição do projeto salvo
     if (projetoExistente && !conteudoAnexo && args.length === 1) {
         projetoDescricao = projetoExistente.descricao;
@@ -56,7 +56,7 @@ async function executeAnalyzeProject({ args, msg, sock, usuario }) {
                     timestamp: new Date().toISOString(),
                     conteudo: analise
                 });
-                db.atualizarProjeto(projetoExistente.id, projetoExistente.titulo, projetoExistente.descricao, projetoExistente.arquivos_anexados, analises);
+                db.project.atualizarProjeto(projetoExistente.id, projetoExistente.titulo, projetoExistente.descricao, projetoExistente.arquivos_anexados, analises);
             }
 
             return `*Análise de Projeto:*

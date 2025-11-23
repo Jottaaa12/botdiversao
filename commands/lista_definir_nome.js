@@ -24,7 +24,7 @@ module.exports = {
         const titulo = args.join(' ');
 
         try {
-            db.definirTituloPadraoLista(chatJid, titulo);
+            db.list.definirTituloPadraoLista(chatJid, titulo);
 
             await sock.sendMessage(chatJid, {
                 text: `✅ Título padrão definido!\n\n📋 Todas as novas listas criadas neste grupo terão o título:\n"${titulo}"`

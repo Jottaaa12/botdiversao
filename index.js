@@ -57,7 +57,9 @@ async function initializeBot() {
     // Isso evita duplicação de agendamentos a cada reconexão
     if (!agendamentosIniciados) {
         const { iniciarAgendamentos } = require('./services/listaScheduler');
+        const { iniciarAgendador } = require('./utils/agendadorScheduler');
         iniciarAgendamentos(sock, db);
+        iniciarAgendador(sock, db);
         agendamentosIniciados = true;
         console.log('[Bot Manager] Agendamentos iniciados pela primeira vez.');
     }
@@ -91,8 +93,8 @@ initializeBot().catch(err => console.error("Erro fatal ao iniciar o bot:", err))
 
 // Listeners para fechar o banco de dados de forma segura ao encerrar o processo
 process.on('exit', () => {
-    if (db && typeof db.fechar === 'function') {
-        db.fechar();
+    if (db && typeof db.close === 'function') {
+        db.close();
         console.log('Banco de dados fechado.');
     }
     if (currentSock) {

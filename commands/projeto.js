@@ -23,7 +23,7 @@ function executeCreateProject({ args, usuario }) {
     }
 
     try {
-        db.salvarProjeto(titulo, descricao, [], [], usuario.id);
+        db.project.salvarProjeto(titulo, descricao, [], [], usuario.id);
         return `✅ Projeto "${titulo}" criado com sucesso!`;
     } catch (error) {
         console.error(`[Comando Projeto] Erro ao criar projeto para ${usuario.id}:`, error);

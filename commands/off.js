@@ -11,7 +11,7 @@ module.exports = {
         }
 
         try {
-            db.salvarConfiguracaoGrupo(chatJid, 'bot_ativo', 'false');
+            db.config.salvarConfiguracaoGrupo(chatJid, 'bot_ativo', 'false');
             return `❌ O bot foi desativado neste grupo. Não responderei a mais nenhum comando aqui, exceto *${prefixo}on* para me reativar.`;
         } catch (error) {
             console.error('[OFF Command Error]', error);

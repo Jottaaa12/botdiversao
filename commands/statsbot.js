@@ -15,15 +15,15 @@ module.exports = {
 
         try {
             // Obter configurações do grupo
-            const botAtivo = db.obterConfiguracaoGrupo(chatJid, 'bot_ativo') !== 'false'; // Padrão true
-            const modoSoAdm = db.obterConfiguracaoGrupo(chatJid, 'modo_so_adm') === 'true';
-            const antiLink = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
-            const antiDelete = db.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
-            const antiEdit = db.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
-            const boasVindas = db.obterConfiguracaoGrupo(chatJid, 'boasvindas') === 'true';
+            const botAtivo = db.config.obterConfiguracaoGrupo(chatJid, 'bot_ativo') !== 'false'; // Padrão true
+            const modoSoAdm = db.config.obterConfiguracaoGrupo(chatJid, 'modo_so_adm') === 'true';
+            const antiLink = db.config.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
+            const antiDelete = db.config.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
+            const antiEdit = db.config.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
+            const boasVindas = db.config.obterConfiguracaoGrupo(chatJid, 'boasvindas') === 'true';
 
             // Obter prefixo global
-            const prefixo = db.obterConfiguracao('prefixo') || '/';
+            const prefixo = db.config.obterConfiguracao('prefixo') || '/';
 
             let statusMsg = `🤖 *STATUS DO BOT - ${chatJid.split('@')[0]}* 🤖\n\n`;
 

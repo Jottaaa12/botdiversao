@@ -14,7 +14,7 @@ module.exports = {
             return;
         }
 
-        const inativos = db.obterInativosGrupo(chatJid, dias);
+        const inativos = db.groupInteraction.obterInativosGrupo(chatJid, dias);
 
         if (!inativos || inativos.length === 0) {
             await sock.sendMessage(chatJid, {

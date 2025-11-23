@@ -3,7 +3,7 @@ const db = require('../database');
 function execute() {
     // Mostrar contabilidade do mês atual
     const mesAtual = new Date().toISOString().substring(0, 7);
-    const contab = db.obterContabilidadeMes(mesAtual);
+    const contab = db.financial.obterContabilidadeMes(mesAtual);
     if (contab) {
         return `Contabilidade ${mesAtual}:\nVendas: R$${contab.vendas}\nCustos: R$${contab.custos}\nLucros: R$${contab.lucros}`;
     } else {

@@ -6,7 +6,7 @@ const db = require('../database');
  */
 function executeStats() {
   try {
-    const stats = db.getStats();
+    const stats = db.config.getStats();
     return `*📊 Estatísticas do Bot*
 
 👥 *Usuários:*
@@ -26,9 +26,9 @@ function executeStats() {
 }
 
 module.exports = {
-    name: 'stats',
-    description: 'Mostra estatísticas de uso do bot.',
-    category: 'adm',
-    permission: 'admin', // Apenas admins e donos podem usar
-    execute: executeStats,
+  name: 'stats',
+  description: 'Mostra estatísticas de uso do bot.',
+  category: 'adm',
+  permission: 'admin', // Apenas admins e donos podem usar
+  execute: executeStats,
 };

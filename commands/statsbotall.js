@@ -38,21 +38,21 @@ module.exports = {
             }
 
             // 2. Configurações Atuais (Resumo)
-            const botAtivo = db.obterConfiguracaoGrupo(chatJid, 'bot_ativo') !== 'false';
-            const antilink = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
-            const antidelete = db.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
-            const antiedit = db.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
+            const botAtivo = db.config.obterConfiguracaoGrupo(chatJid, 'bot_ativo') !== 'false';
+            const antilink = db.config.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
+            const antidelete = db.config.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
+            const antiedit = db.config.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
 
             const configStats = `⚙️ *CONFIGURAÇÕES*\n` +
                 `Bot Ativo: ${botAtivo ? '✅' : '❌'} | Anti-Link: ${antilink ? '✅' : '❌'}\n` +
                 `Anti-Delete: ${antidelete ? '✅' : '❌'} | Anti-Edit: ${antiedit ? '✅' : '❌'}\n`;
 
             // 3. Dados de Moderação (DB)
-            const warnings = db.obterAdvertenciasGrupo(chatJid).length;
-            const mutes = db.obterMutadosGrupo(chatJid).length;
-            const autoResponses = db.listarAutoRespostas(chatJid).length;
+            const warnings = db.groupInteraction.obterAdvertenciasGrupo(chatJid).length;
+            const mutes = db.groupInteraction.obterMutadosGrupo(chatJid).length;
+            const autoResponses = db.groupInteraction.listarAutoRespostas(chatJid).length;
             // Estatísticas Globais
-            const globalStats = db.getStats();
+            const globalStats = db.config.getStats();
 
             const dbStats = `🛡️ *MODERAÇÃO & DADOS*\n` +
                 `Advertências Ativas: ${warnings}\n` +

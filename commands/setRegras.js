@@ -21,7 +21,7 @@ module.exports = {
 
         // 1. Salva as regras no banco de dados para o comando !regras
         try {
-            db.salvarConfiguracaoGrupo(chatJid, 'regras', newText);
+            db.config.salvarConfiguracaoGrupo(chatJid, 'regras', newText);
             dbSuccess = true;
         } catch (error) {
             console.error('[SetRegras DB Error]', error);

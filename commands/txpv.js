@@ -18,7 +18,7 @@ async function executeTransmission(context, data) {
         try {
             // Salvar contato no banco de dados para evitar erros
             // O segundo argumento é o nome (null se não soubermos) e o terceiro é histórico (vazio)
-            db.salvarUsuario(targetJid, null, []);
+            db.user.salvarUsuario(targetJid, null, []);
 
             // Enviar mensagem
             await sock.sendMessage(targetJid, { text: messageText });

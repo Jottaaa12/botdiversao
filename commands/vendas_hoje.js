@@ -31,7 +31,7 @@ function execute() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const hoje = `${year}-${month}-${day}`; // YYYY-MM-DD
-    const todasVendas = db.obterTodasVendas();
+    const todasVendas = db.financial.obterTodasVendas();
     const vendas = todasVendas.filter(v => {
         const vendaDate = extractDateFromDataHora(v.data_hora);
         return vendaDate === hoje;

@@ -13,6 +13,7 @@ const axios = require('axios');
 // Configuração da API
 const GIPHY_API_KEY = 'wMtmRu6AbnpFYAUVzzXwnfUuOZaC85rC'; // API Key configurada
 const GIPHY_BASE_URL = 'https://api.giphy.com/v1/gifs';
+const HTTP_TIMEOUT = 15000; // 15 segundos de timeout
 
 /**
  * Busca um GIF aleatório baseado em uma query
@@ -27,7 +28,8 @@ async function getRandomGif(searchQuery, rating = 'g') {
                 api_key: GIPHY_API_KEY,
                 tag: searchQuery,
                 rating: rating
-            }
+            },
+            timeout: HTTP_TIMEOUT
         });
 
         if (response.data && response.data.data) {
@@ -58,7 +60,8 @@ async function getRandomFromSearch(searchQuery, limit = 25, rating = 'g') {
                 limit: limit,
                 rating: rating,
                 lang: 'pt' // Busca em português
-            }
+            },
+            timeout: HTTP_TIMEOUT
         });
 
         if (response.data && response.data.data && response.data.data.length > 0) {
@@ -85,7 +88,8 @@ async function getTrendingGif() {
                 api_key: GIPHY_API_KEY,
                 limit: 50,
                 rating: 'g'
-            }
+            },
+            timeout: HTTP_TIMEOUT
         });
 
         if (response.data && response.data.data && response.data.data.length > 0) {
@@ -110,7 +114,8 @@ async function getGifById(gifId) {
         const response = await axios.get(`${GIPHY_BASE_URL}/${gifId}`, {
             params: {
                 api_key: GIPHY_API_KEY
-            }
+            },
+            timeout: HTTP_TIMEOUT
         });
 
         if (response.data && response.data.data) {

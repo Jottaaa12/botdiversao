@@ -6,28 +6,26 @@ async function handleGroupUpdate(sock, groupUpdate, joinInProgress) {
         console.log(`[Group Update] Recebido evento para o grupo: ${groupId}`);
 
         // Tenta obter uma configuração para ver se o grupo já é conhecido
-        const existingConfig = db.obterConfiguracaoGrupo(groupId, 'ia_ativa');
+        const existingConfig = db.config.obterConfiguracaoGrupo(groupId, 'ia_ativa');
 
         if (!existingConfig) {
             console.log(`[Group Update] Grupo novo detectado: ${groupId}. Registrando no banco de dados...`);
             try {
                 // Adiciona configurações padrão para o novo grupo
-                db.salvarConfiguracaoGrupo(groupId, 'ia_ativa', 'false');
-                db.salvarConfiguracaoGrupo(groupId, 'antilink', 'false');
-                db.salvarConfiguracaoGrupo(groupId, 'boasvindas', 'false'); // Exemplo de outra config
+                db.config.salvarConfiguracaoGrupo(groupId, 'ia_ativa', 'false');
+                db.config.salvarConfiguracaoGrupo(groupId, 'antilink', 'false');
+                db.config.salvarConfiguracaoGrupo(groupId, 'boasvindas', 'false'); // Exemplo de outra config
 
                 // Incrementa o contador de grupos
-                db.incrementarContador('total_grupos');
+                db.config.incrementarContador('total_grupos');
 
                 // *** Lógica para suprimir a mensagem de boas-vindas ***
                 if (joinInProgress && joinInProgress.has(groupId)) {
                     console.log(`[Group Update] Bot entrou no grupo ${groupId} via !join. Suprimindo mensagem de boas-vindas.`);
                     joinInProgress.delete(groupId); // Limpa a flag
                 } else {
-                    // Enviar a mensagem de boas-vindas normal
-                    await sock.sendMessage(groupId, {
-                        text: 'Olá! Fui adicionado a este grupo.\n\nPara interagir comigo, use o prefixo `/` ou me mencione. Para ver a lista de comandos, digite `/help`.'
-                    });
+                    // Bot adicionado manualmente - não envia mensagem
+                    console.log(`[Group Update] Bot adicionado ao grupo ${groupId}. Nenhuma mensagem será enviada.`);
                 }
                 // *** Fim da lógica de supressão ***
 
@@ -47,7 +45,7 @@ async function handleParticipantUpdate(sock, { id, participants, action }) {
     console.log('[Participant Update] Participantes recebidos:', participants);
 
     // Verifica se a função de boas-vindas está ativada para este grupo
-    const welcomeEnabled = db.obterConfiguracaoGrupo(id, 'boasvindas') === 'true';
+    const welcomeEnabled = db.config.obterConfiguracaoGrupo(id, 'boasvindas') === 'true';
 
     if (welcomeEnabled && action === 'add') {
         // Obter o nome do grupo
@@ -67,7 +65,7 @@ async function handleParticipantUpdate(sock, { id, participants, action }) {
                 console.warn('[Participant Update] JID inválido encontrado no objeto participante:', participant);
                 continue; // Pula para o próximo item
             }
-            
+
             // Evitar que o bot se dê as boas-vindas
             if (userJid === sock.user.id) {
                 continue;

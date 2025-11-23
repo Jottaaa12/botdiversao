@@ -21,7 +21,7 @@ function executePrefix({ args, prefixo }) {
     }
 
     try {
-        db.salvarConfiguracao('prefixo', novoPrefixo);
+        db.config.salvarConfiguracao('prefixo', novoPrefixo);
         console.log(`[Comando Prefixo] Prefixo alterado para '${novoPrefixo}'.`);
         return `✅ Prefixo de comandos foi alterado para: *${novoPrefixo}*`;
     } catch (error) {

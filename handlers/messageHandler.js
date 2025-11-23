@@ -15,6 +15,10 @@ const forcaGames = new Map();
 const joinInProgress = new Map();
 // --- Armazenamento de estado para auto-respostas interativas ---
 const autoRespostaSteps = new Map();
+// --- Armazenamento de estado para agendamento interativo ---
+const agendamentoSteps = new Map();
+// --- Armazenamento de estado para lista horário interativa ---
+const listaHorarioSteps = new Map();
 // --- Armazenamento de pedidos de casamento pendentes ---
 const pedidosCasamento = new Map(); // Estrutura: usuarioAlvo -> { solicitante, chatJid, timestamp }
 // --- Armazenamento de mensagens para antiedit e antidelete ---
@@ -41,7 +45,9 @@ for (const file of commandFiles) {
                     console.log(`  - Alias '${alias}' para '${command.name}' registrado.`);
                 });
             }
-        } else {
+        }
+
+        else {
             console.warn(`[Aviso] O arquivo '${file}' não exporta um comando no formato esperado (name, execute).`);
         }
     } catch (error) {
@@ -50,9 +56,6 @@ for (const file of commandFiles) {
 }
 console.log(`[Command Loader] ${commands.size} comandos/aliases carregados com sucesso.`);
 // --- Fim do Carregador ---
-
-
-
 
 // Funções de parsing movidas para services/salesService.js
 
@@ -114,13 +117,29 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         }
     }
 
+    // Normalizar JID para remover sufixo de dispositivo (:0, :1, etc) e garantir consistência
+    if (senderJid) {
+        senderJid = jidNormalizedUser(senderJid);
+    }
+
     const chatJid = msg.key.remoteJid;
-    const message = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-    const prefixo = db.obterConfiguracao('prefixo') || '/';
+    const message = msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        msg.message?.videoMessage?.caption ||
+        msg.message?.documentMessage?.caption ||
+        '';
+    const prefixo = db.config.obterConfiguracao('prefixo') || '/';
     const messageId = msg.key.id;
     const hasAttachment = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage || msg.message?.audioMessage);
 
     console.log(`[MessageHandler] Processando mensagem de ${senderJid} em ${chatJid}. Conteúdo: ${message.substring(0, 50)}...`);
+
+    // Debug do mapa de agendamentos
+    if (agendamentoSteps.size > 0) {
+        console.log(`[Debug Agendamento] Mapa tem ${agendamentoSteps.size} itens. Chaves: ${Array.from(agendamentoSteps.keys()).join(', ')}`);
+        console.log(`[Debug Agendamento] SenderJid atual: ${senderJid}. Está no mapa? ${agendamentoSteps.has(senderJid)}`);
+    }
 
     // --- DETECÇÃO DE MENSAGENS DELETADAS (PROTOCOL MESSAGE) ---
     if (await handleAntiDelete(sock, msg, isGroup, chatJid, messageStore, db)) {
@@ -156,9 +175,6 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         }
     }
 
-    // --- INTERCEPTAÇÃO DE CONFIRMAÇÃO TXPV (REMOVIDA DAQUI) ---
-    // (Movida para após a verificação de fromMe para evitar loop infinito)
-
     // --- VERIFICAÇÃO DE USUÁRIO MUTADO ---
     if (await handleAntiMute(sock, msg, isGroup, chatJid, senderJid, db)) {
         return; // Interrompe o processamento
@@ -190,7 +206,6 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                 } catch (e) { /* Ignorar erro de envio se a conexão estiver instável */ }
             }
         }
-        // Encerra a função aqui para evitar qualquer processamento adicional.
         return;
     }
     // --- FIM DA LÓGICA DE REINICIALIZAÇÃO ---
@@ -228,7 +243,6 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
     // --- CORREÇÃO PARA MANTER O BOT "VIVO" ---
     try {
         // Envia o recibo de que a mensagem foi lida.
-        // Isso é crucial para o WhatsApp continuar enviando eventos de mensagem em tempo real.
         const messageKey = {
             remoteJid: msg.key.remoteJid,
             id: msg.key.id,
@@ -241,18 +255,16 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
     }
     // --- FIM DA CORREÇÃO ---
 
-
-
     // A variável 'senderJid' agora contém o JID mais confiável que a biblioteca pôde fornecer.
     const permissionLevel = await getPermissionLevel(sock, senderJid);
 
     // ----------------- INÍCIO: LÓGICA ON/OFF DO BOT -----------------
     if (isGroup) {
-        const botAtivo = db.obterConfiguracaoGrupo(msg.key.remoteJid, 'bot_ativo');
+        const botAtivo = db.config.obterConfiguracaoGrupo(msg.key.remoteJid, 'bot_ativo');
         // Se a configuração for 'false', o bot está desligado no grupo.
         if (botAtivo === 'false') {
             const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-            const prefixo = db.obterConfiguracao('prefixo') || '/';
+            const prefixo = db.config.obterConfiguracao('prefixo') || '/';
 
             // Verifica se a mensagem é um comando para reativar o bot.
             if (messageText.toLowerCase().startsWith(prefixo)) {
@@ -277,62 +289,20 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
     }
     // ----------------- FIM: LÓGICA ON/OFF DO BOT -----------------
 
-
-
-    // Obter prefixo atual (já declarado no início da função)
-
     // Ignorar mensagens próprias e broadcasts de status
     if (!msg.key.fromMe && (m.type === 'notify' || m.type === 'append') && senderJid !== sock.user.id && msg.key.remoteJid !== 'status@broadcast') {
-        const chatJid = msg.key.remoteJid;
-        const message = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-
-        // Verificar se há anexos na mensagem
-        // --- INTERCEPTAÇÃO DE CONFIRMAÇÃO DO TXPV ---
-        if (txpvConfirmations.has(senderJid)) {
-            const confirmationData = txpvConfirmations.get(senderJid);
-            const input = message?.trim().toLowerCase();
-
-            if (Date.now() - confirmationData.timestamp > 120000) {
-                txpvConfirmations.delete(senderJid);
-                await sock.sendMessage(chatJid, { text: '❌ Tempo de confirmação expirado. Comando cancelado.' });
-                return;
-            }
-
-            if (input === 'y' || input === 'sim' || input === 's') {
-                txpvConfirmations.delete(senderJid);
-                // Carrega o comando txpv dinamicamente para evitar dependência circular ou problemas de carregamento
-                const txpvCommand = commands.get('txpv');
-                if (txpvCommand && typeof txpvCommand.executeTransmission === 'function') {
-                    await txpvCommand.executeTransmission({ sock, chatJid, db }, confirmationData);
-                } else {
-                    await sock.sendMessage(chatJid, { text: '❌ Erro interno: Comando txpv não encontrado.' });
-                }
-                return; // Interrompe o processamento normal
-            } else if (input === 'n' || input === 'não' || input === 'nao') {
-                txpvConfirmations.delete(senderJid);
-                await sock.sendMessage(chatJid, { text: '❌ Transmissão cancelada pelo usuário.' });
-                return; // Interrompe o processamento normal
-            } else {
-                // Se não for Y nem N, ignora e deixa o usuário tentar novamente ou o timeout expirar
-                // Ou pode retornar aqui para evitar que o bot processe como outro comando
-                // Vamos retornar para forçar a decisão
-                await sock.sendMessage(chatJid, { text: '⚠️ Responda com *Y* (Sim) ou *N* (Não) para confirmar a transmissão.' });
-                return;
-            }
-        }
-        // --- FIM DA INTERCEPTAÇÃO ---
 
         // Incrementar contador de mensagens processadas
-        db.incrementarContador('total_mensagens');
+        db.config.incrementarContador('total_mensagens');
 
         // Salvar ou atualizar usuário (usando o senderJid real)
-        let usuario = db.obterUsuario(senderJid);
+        let usuario = db.user.obterUsuario(senderJid);
         if (!usuario) {
             // Novo usuário
-            db.salvarUsuario(senderJid, msg.pushName || null, []);
-            usuario = db.obterUsuario(senderJid);
+            db.user.salvarUsuario(senderJid, msg.pushName || null, []);
+            usuario = db.user.obterUsuario(senderJid);
             // Incrementar contador de usuários ativos
-            db.incrementarContador('usuarios_ativos');
+            db.config.incrementarContador('usuarios_ativos');
         }
 
         // Atualizar histórico de interações
@@ -348,11 +318,11 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             historico.splice(0, historico.length - 100);
         }
 
-        db.atualizarHistoricoUsuario(senderJid, historico);
+        db.user.atualizarHistoricoUsuario(senderJid, historico);
 
         // Registrar atividade no grupo (para !ranking e !fantasmas)
         if (isGroup) {
-            db.registrarAtividadeGrupo(chatJid, senderJid);
+            db.groupInteraction.registrarAtividadeGrupo(chatJid, senderJid);
         }
 
         // ----------------- INÍCIO: LÓGICA ANTI-LINK (VERSÃO FINAL) -----------------
@@ -366,7 +336,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             const saleData = parseSaleMessage(message);
             if (saleData) {
                 try {
-                    db.salvarVenda(
+                    db.financial.salvarVenda(
                         saleData.cliente,
                         saleData.pedidoId,
                         saleData.dataHora,
@@ -387,7 +357,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             const closingData = parseClosingMessage(message);
             if (closingData) {
                 try {
-                    db.salvarFechamentoCaixa(
+                    db.financial.salvarFechamentoCaixa(
                         closingData.data,
                         closingData.operador,
                         closingData.horarioInicio,
@@ -416,24 +386,115 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             }
         }
 
-        // --- LÓGICA DE TRATAMENTO DE AUTO-RESPOSTA INTERATIVA ---
-        const autoRespostaStep = autoRespostaSteps.get(senderJid);
-        if (autoRespostaStep && autoRespostaStep.chatJid === chatJid) {
-            const resposta = message.trim();
-            if (resposta) {
-                try {
-                    db.adicionarAutoResposta(autoRespostaStep.trigger, resposta, chatJid, senderJid);
-                    await sock.sendMessage(chatJid, {
-                        text: `✅ Auto-resposta configurada!\n\n🗣️ *Gatilho:* "${autoRespostaStep.trigger}"\n🤖 *Resposta:* "${resposta}"`
-                    });
-                } catch (error) {
-                    console.error('Erro ao salvar auto-resposta interativa:', error);
-                    await sock.sendMessage(chatJid, { text: '❌ Erro ao salvar auto-resposta. Tente novamente.' });
+        // ==================================================================================
+        // ÁREA DE INTERCEPTAÇÃO DE FLUXOS INTERATIVOS (PRIORIDADE ALTA)
+        // ==================================================================================
+
+        // --- INTERCEPTAÇÃO DE CONFIRMAÇÃO DO TXPV ---
+        if (txpvConfirmations.has(senderJid)) {
+            const confirmationData = txpvConfirmations.get(senderJid);
+            const input = message?.trim().toLowerCase();
+
+            if (Date.now() - confirmationData.timestamp > 120000) {
+                txpvConfirmations.delete(senderJid);
+                await sock.sendMessage(chatJid, { text: '❌ Tempo de confirmação expirado. Comando cancelado.' });
+                return;
+            }
+
+            if (input === 'y' || input === 'sim' || input === 's') {
+                txpvConfirmations.delete(senderJid);
+                const txpvCommand = commands.get('txpv');
+                if (txpvCommand && typeof txpvCommand.executeTransmission === 'function') {
+                    await txpvCommand.executeTransmission({ sock, chatJid, db }, confirmationData);
+                } else {
+                    await sock.sendMessage(chatJid, { text: '❌ Erro interno: Comando txpv não encontrado.' });
                 }
-                autoRespostaSteps.delete(senderJid);
-                return; // Interrompe o processamento
+                return;
+            } else if (input === 'n' || input === 'não' || input === 'nao') {
+                txpvConfirmations.delete(senderJid);
+                await sock.sendMessage(chatJid, { text: '❌ Transmissão cancelada pelo usuário.' });
+                return;
+            } else {
+                await sock.sendMessage(chatJid, { text: '⚠️ Responda com *Y* (Sim) ou *N* (Não) para confirmar a transmissão.' });
+                return;
             }
         }
+
+        // --- LÓGICA DE TRATAMENTO DE LISTA HORÁRIO INTERATIVA ---
+        if (listaHorarioSteps.has(senderJid)) {
+            const command = commands.get('lista_horario');
+            if (command) {
+                const args = message.trim().split(' ');
+                const response = await command.execute({
+                    sock,
+                    msg,
+                    args,
+                    senderJid,
+                    chatJid,
+                    prefixo,
+                    db,
+                    listaHorarioSteps,
+                    isGroup
+                });
+
+                if (response && typeof response === 'string') {
+                    await sock.sendMessage(chatJid, { text: response });
+                }
+                return; // Interrompe o processamento normal
+            }
+        }
+
+        // --- LÓGICA DE TRATAMENTO DE AUTO-RESPOSTA INTERATIVA ---
+        if (autoRespostaSteps.has(senderJid)) {
+            const command = commands.get('autoresposta');
+            if (command) {
+                const args = message.trim().split(' ');
+                const response = await command.execute({
+                    sock,
+                    msg,
+                    args,
+                    senderJid,
+                    chatJid,
+                    prefixo,
+                    db,
+                    autoRespostaSteps,
+                    isGroup
+                });
+
+                if (response && typeof response === 'string') {
+                    await sock.sendMessage(chatJid, { text: response });
+                }
+                return; // Interrompe o processamento normal
+            }
+        }
+
+        // --- LÓGICA DE TRATAMENTO DE AGENDAMENTO INTERATIVO ---
+        if (agendamentoSteps.has(senderJid)) {
+            const command = commands.get('agendar');
+            if (command) {
+                const args = message.trim().split(' ');
+                const response = await command.execute({
+                    sock,
+                    msg,
+                    args,
+                    senderJid,
+                    chatJid,
+                    prefixo,
+                    db,
+                    agendamentoSteps,
+                    isGroup
+                });
+
+                if (response && typeof response === 'string') {
+                    await sock.sendMessage(chatJid, { text: response });
+                }
+                return; // Interrompe o processamento normal
+            }
+        }
+
+        // ==================================================================================
+        // FIM DA ÁREA DE INTERCEPTAÇÃO
+        // ==================================================================================
 
         // Processar comandos específicos
         let response = '';
@@ -468,7 +529,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
 
                 // --- VERIFICAÇÃO DO MODO SO_ADM ---
                 if (isGroup) {
-                    const modoSoAdm = db.obterConfiguracaoGrupo(chatJid, 'modo_so_adm') === 'true';
+                    const modoSoAdm = db.config.obterConfiguracaoGrupo(chatJid, 'modo_so_adm') === 'true';
 
                     // Se o modo so_adm estiver ativo E o usuário não for admin/owner E não for o próprio comando so_adm
                     if (modoSoAdm &&
@@ -506,13 +567,18 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                             commands,
                             txpvConfirmations,
                             autoRespostaSteps,
-                            autoRespostaSteps,
+                            agendamentoSteps,
                             forcaGames,
-                            isGroup // Passando isGroup explicitamente
+                            listaHorarioSteps,
+                            isGroup
                         });
                         console.log(`[Debug] Comando ${commandName} executado. Resposta:`, response ? 'Sim (conteúdo)' : 'Não/Vazia');
                         // Incrementar contador de comandos executados
-                        db.incrementarContador('comandos_executados');
+                        db.config.incrementarContador('comandos_executados');
+
+                        if (response && typeof response === 'string') {
+                            await sock.sendMessage(chatJid, { text: response });
+                        }
                     } catch (error) {
                         console.error(`[Erro ao Executar Comando] '${commandName}':`, error);
                         response = `😕 Ocorreu um erro ao tentar executar o comando \`${commandName}\`.`;
@@ -558,11 +624,25 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         // --- AUTO-RESPOSTAS ---
         if (!isCommand && isGroup && message) {
             try {
-                const autoResponse = db.obterAutoResposta(message.trim(), chatJid);
-                if (autoResponse) {
-                    console.log(`[AutoResposta] Gatilho "${autoResponse.gatilho}" acionado em ${chatJid}.`);
-                    await sock.sendMessage(chatJid, { text: autoResponse.resposta }, { quoted: msg });
-                    return; // Interrompe o processamento para não acionar IA
+                // Busca todas as respostas do grupo para verificar os tipos de match
+                const triggers = db.groupInteraction.listarAutoRespostas(chatJid);
+                const msgLower = message.trim().toLowerCase();
+
+                for (const t of triggers) {
+                    let match = false;
+
+                    if (t.match_type === 'contains') {
+                        if (msgLower.includes(t.gatilho)) match = true;
+                    } else {
+                        // Default: exact
+                        if (msgLower === t.gatilho) match = true;
+                    }
+
+                    if (match) {
+                        console.log(`[AutoResposta] Gatilho "${t.gatilho}" (${t.match_type}) acionado em ${chatJid}.`);
+                        await sock.sendMessage(chatJid, { text: t.resposta }, { quoted: msg });
+                        return; // Interrompe o processamento para não acionar IA
+                    }
                 }
             } catch (error) {
                 console.error('[AutoResposta] Erro ao verificar gatilho:', error);
@@ -624,9 +704,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                                 roletaRussaGames,
                                 getPermissionLevel,
                                 joinInProgress,
-                                restartBot, // Adicionado aqui
-                                restartBot, // Adicionado aqui
+                                restartBot,
                                 commands,
+                                agendamentoSteps,
                                 isGroup // Passando isGroup explicitamente
                             });
                         } catch (error) {
@@ -652,7 +732,29 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             }
         }
 
-        // A lógica de resposta genérica da IA foi removida para ser ativada apenas por comando.
+        // --- RESPOSTA AUTOMÁTICA DA IA EM CONVERSAS PRIVADAS ---
+        // A IA só responde automaticamente em conversas privadas (não em grupos)
+        // e apenas se o usuário ativou a funcionalidade com /ia on
+        if (!isCommand && !isGroup && message) {
+            // Verificar se a IA está ativa para este usuário (ativa por padrão)
+            const iaAtiva = db.config.obterConfiguracaoUsuario(senderJid, 'ia_ativa');
+            const iaHabilitada = iaAtiva === null || iaAtiva === 'true'; // Ativa por padrão se não configurado
+
+            if (iaHabilitada) {
+                try {
+                    console.log(`[IA] Gerando resposta para ${senderJid} em conversa privada...`);
+                    await sock.sendPresenceUpdate('composing', chatJid);
+
+                    // Gerar resposta usando o sistema de histórico
+                    response = await aiService.generateResponse(message, usuario, prefixo, senderJid);
+
+                    await sock.sendPresenceUpdate('paused', chatJid);
+                } catch (error) {
+                    console.error('[IA] Erro ao gerar resposta:', error);
+                    response = '🔧 Desculpe, tive um problema ao processar sua mensagem... 😔';
+                }
+            }
+        }
 
         // Enviar resposta apenas se houver uma resposta a enviar
         if (response && typeof response === 'string') {
@@ -662,7 +764,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                 mensagem: response,
                 tipo: 'enviada'
             });
-            db.atualizarHistoricoUsuario(senderJid, historico);
+            db.user.atualizarHistoricoUsuario(senderJid, historico);
 
             // Enviar resposta
             await sock.sendMessage(chatJid, { text: response });

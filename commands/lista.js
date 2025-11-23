@@ -1,4 +1,4 @@
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const { downloadContentFromMessage, delay } = require('@whiskeysockets/baileys');
 
 module.exports = {
     name: 'lista',
@@ -61,7 +61,27 @@ Mostra esta mensagem de ajuda.
 Remove alguém da lista (Apenas Admin/Criador).
 
 🔹 *!lista fechar*
-Encerra a lista atual (Apenas Admin/Criador).`;
+Encerra a lista atual (Apenas Admin/Criador).
+
+━━━━━━━━━━━━━━━━━━━
+⏰ *ABERTURA AUTOMÁTICA*
+
+🔹 *!lista_abertura [horário] [dias]*
+Configura abertura automática da lista.
+_Ex: !lista_abertura 08:00 seg-sex_
+_Ex: !lista_abertura 09:00 todos_
+
+🔹 *!lista_abertura status*
+Verifica se há abertura automática ativa.
+
+🔹 *!lista_abertura pausar*
+Pausa a abertura automática (mantém configuração).
+
+🔹 *!lista_abertura reativar*
+Reativa uma abertura pausada.
+
+🔹 *!lista_abertura cancelar*
+Cancela a abertura automática completamente.`;
 
             await sock.sendMessage(chatJid, { text: textoAjuda });
             return;
@@ -69,17 +89,38 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
         // --- SUBCOMANDO: SAIR ---
         if (subcomando === 'sair') {
-            const listaAtiva = db.obterListaAtiva(chatJid);
+            const listaAtiva = db.list.obterListaAtiva(chatJid);
             if (!listaAtiva) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
                 return;
             }
 
-            const removeu = db.removerMembroLista(listaAtiva.id, senderJid);
+            const removeu = db.list.removerMembroLista(listaAtiva.id, senderJid);
             if (removeu.changes > 0) {
-                await sock.sendMessage(chatJid, { text: '✅ Você saiu da lista.' });
-                // Mostra a lista atualizada
-                return this.mostrarLista(sock, chatJid, db);
+                // Obtém o nome do usuário para a mensagem
+                const usuario = db.user.obterUsuario(senderJid);
+                let nomeUsuario = usuario && usuario.nome ? usuario.nome : senderJid.split('@')[0];
+
+                // Primeiro mostra a lista atualizada
+                await this.mostrarLista(sock, chatJid, db);
+
+                // Aguarda 1 segundo com status "digitando"
+                await sock.sendPresenceUpdate('composing', chatJid);
+                await delay(1000);
+                await sock.sendPresenceUpdate('paused', chatJid);
+
+                // Depois envia mensagem mencionando a pessoa
+                if (senderJid.includes('@s.whatsapp.net')) {
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ ${nomeUsuario} não vai mais!`,
+                        mentions: [senderJid]
+                    });
+                } else {
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ ${nomeUsuario} não vai mais!`
+                    });
+                }
+                return;
             } else {
                 await sock.sendMessage(chatJid, { text: '❌ Você não estava na lista.' });
                 return;
@@ -88,13 +129,13 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
         // --- SUBCOMANDO: CHAMAR ---
         if (subcomando === 'chamar') {
-            const listaAtiva = db.obterListaAtiva(chatJid);
+            const listaAtiva = db.list.obterListaAtiva(chatJid);
             if (!listaAtiva) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
                 return;
             }
 
-            const membros = db.obterMembrosLista(listaAtiva.id);
+            const membros = db.list.obterMembrosLista(listaAtiva.id);
             if (membros.length === 0) {
                 await sock.sendMessage(chatJid, { text: '❌ A lista está vazia.' });
                 return;
@@ -135,7 +176,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                         alvo = membros.find(m => {
                             let nome = m.id_usuario;
                             if (m.id_usuario.includes('@s.whatsapp.net')) {
-                                const u = db.obterUsuario(m.id_usuario);
+                                const u = db.user.obterUsuario(m.id_usuario);
                                 if (u && u.nome) nome = u.nome;
                             }
                             return nome.toLowerCase().includes(termoBusca);
@@ -194,17 +235,17 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                 return;
             }
 
-            let listaAtiva = db.obterListaAtiva(chatJid);
+            let listaAtiva = db.list.obterListaAtiva(chatJid);
             if (!listaAtiva) {
                 // Cria lista se não existir
-                const tituloPadrao = db.obterTituloPadraoLista(chatJid) || 'Lista Geral';
-                db.criarLista(chatJid, tituloPadrao, senderJid);
-                listaAtiva = db.obterListaAtiva(chatJid);
+                const tituloPadrao = db.list.obterTituloPadraoLista(chatJid) || 'Lista Geral';
+                db.list.criarLista(chatJid, tituloPadrao, senderJid);
+                listaAtiva = db.list.obterListaAtiva(chatJid);
             }
 
             const nomeAdicionado = restoArgs;
             try {
-                db.adicionarMembroLista(listaAtiva.id, nomeAdicionado);
+                db.list.adicionarMembroLista(listaAtiva.id, nomeAdicionado);
                 await sock.sendMessage(chatJid, { text: `✅ ${nomeAdicionado} adicionado(a) à lista!` });
                 return this.mostrarLista(sock, chatJid, db);
             } catch (error) {
@@ -223,7 +264,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             // Verifica permissão (Admin, Criador da lista ou Dono do bot)
             const isAdmin = await this.verificarPermissao(sock, chatJid, senderJid, db);
             const isOwner = permissionLevel === 'owner';
-            const listaParaRemover = db.obterListaAtiva(chatJid);
+            const listaParaRemover = db.list.obterListaAtiva(chatJid);
 
             if (!listaParaRemover) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
@@ -243,7 +284,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                 return;
             }
 
-            const membros = db.obterMembrosLista(listaParaRemover.id);
+            const membros = db.list.obterMembrosLista(listaParaRemover.id);
             let alvo = null;
 
             // Tenta por número
@@ -260,7 +301,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                 alvo = membros.find(m => {
                     let nome = m.id_usuario;
                     if (m.id_usuario.includes('@s.whatsapp.net')) {
-                        const u = db.obterUsuario(m.id_usuario);
+                        const u = db.user.obterUsuario(m.id_usuario);
                         if (u && u.nome) nome = u.nome;
                     }
                     return nome.toLowerCase().includes(termoBusca);
@@ -268,7 +309,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             }
 
             if (alvo) {
-                db.removerMembroLista(listaParaRemover.id, alvo.id_usuario);
+                db.list.removerMembroLista(listaParaRemover.id, alvo.id_usuario);
                 await sock.sendMessage(chatJid, { text: `✅ Membro removido da lista.` });
                 return this.mostrarLista(sock, chatJid, db);
             } else {
@@ -282,7 +323,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             // Verifica permissão (Admin, Criador da lista ou Dono do bot)
             const isAdmin = await this.verificarPermissao(sock, chatJid, senderJid, db);
             const isOwner = permissionLevel === 'owner';
-            const listaParaFechar = db.obterListaAtiva(chatJid);
+            const listaParaFechar = db.list.obterListaAtiva(chatJid);
 
             if (!listaParaFechar) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
@@ -298,7 +339,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             }
 
             if (db.encerrarLista) {
-                db.encerrarLista(listaParaFechar.id);
+                db.list.encerrarLista(listaParaFechar.id);
             } else {
                 // Fallback se o método não existir (embora devesse)
                 console.error('Método encerrarLista não encontrado no db');
@@ -313,7 +354,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             // Verifica permissão (Admin, Criador da lista ou Dono do bot)
             const isAdmin = await this.verificarPermissao(sock, chatJid, senderJid, db);
             const isOwner = permissionLevel === 'owner';
-            const listaParaLimpar = db.obterListaAtiva(chatJid);
+            const listaParaLimpar = db.list.obterListaAtiva(chatJid);
 
             if (!listaParaLimpar) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
@@ -328,13 +369,13 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             }
 
             // Remove todos os membros mas mantém a lista
-            const membrosAntigos = db.obterMembrosLista(listaParaLimpar.id);
+            const membrosAntigos = db.list.obterMembrosLista(listaParaLimpar.id);
             if (membrosAntigos.length === 0) {
                 await sock.sendMessage(chatJid, { text: '❌ A lista já está vazia.' });
                 return;
             }
 
-            db.prepare('DELETE FROM membros_lista WHERE id_lista = ?').run(listaParaLimpar.id);
+            db.list.limparMembrosLista(listaParaLimpar.id);
 
             await sock.sendMessage(chatJid, { text: `✅ Lista limpa! ${membrosAntigos.length} membro(s) removido(s).\n\nA lista continua ativa e pronta para novos membros.` });
             return this.mostrarLista(sock, chatJid, db);
@@ -342,7 +383,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
         // --- SUBCOMANDO: EDITAR (Edita nome de um membro) ---
         if (subcomando === 'editar' || subcomando === 'edit' || subcomando === 'renomear') {
-            const listaParaEditar = db.obterListaAtiva(chatJid);
+            const listaParaEditar = db.list.obterListaAtiva(chatJid);
 
             if (!listaParaEditar) {
                 await sock.sendMessage(chatJid, { text: '❌ Não há nenhuma lista ativa no momento.' });
@@ -362,7 +403,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                 return;
             }
 
-            const membros = db.obterMembrosLista(listaParaEditar.id);
+            const membros = db.list.obterMembrosLista(listaParaEditar.id);
             if (numero > membros.length) {
                 await sock.sendMessage(chatJid, { text: `❌ Não existe membro número ${numero} na lista.` });
                 return;
@@ -371,7 +412,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             const membroParaEditar = membros[numero - 1];
 
             // Atualiza o nome do usuário no banco
-            db.atualizarNomeUsuario(membroParaEditar.id_usuario, novoNome);
+            db.user.atualizarNomeUsuario(membroParaEditar.id_usuario, novoNome);
 
             await sock.sendMessage(chatJid, { text: `✅ Nome atualizado com sucesso!\n\n${numero}. ${novoNome}` });
             return this.mostrarLista(sock, chatJid, db);
@@ -380,7 +421,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
         // --- SUBCOMANDO: STATS (Estatísticas da lista) ---
         if (subcomando === 'stats' || subcomando === 'estatisticas' || subcomando === 'info') {
             // Busca todas as listas já criadas neste grupo (ativas e inativas)
-            const todasListas = db.prepare('SELECT * FROM listas_grupo WHERE id_grupo = ? ORDER BY criado_em DESC').all(chatJid);
+            const todasListas = db.list.obterTodasListasGrupo(chatJid);
 
             if (todasListas.length === 0) {
                 await sock.sendMessage(chatJid, { text: '📊 *ESTATÍSTICAS DE LISTAS*\n\n❌ Nenhuma lista foi criada neste grupo ainda.' });
@@ -395,7 +436,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             let totalParticipacoes = 0;
 
             for (const lista of todasListas) {
-                const membros = db.obterMembrosLista(lista.id);
+                const membros = db.list.obterMembrosLista(lista.id);
                 totalParticipacoes += membros.length;
 
                 for (const membro of membros) {
@@ -415,7 +456,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             statsMsg += `🎯 Participantes únicos: *${participacoesUnicas.size}*\n`;
 
             if (listaAtiva) {
-                const membrosAtivos = db.obterMembrosLista(listaAtiva.id);
+                const membrosAtivos = db.list.obterMembrosLista(listaAtiva.id);
                 statsMsg += `✅ Lista ativa agora: *${membrosAtivos.length} membro(s)*\n`;
             } else {
                 statsMsg += `❌ Nenhuma lista ativa no momento\n`;
@@ -425,7 +466,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
                 statsMsg += '\n🏆 *TOP PARTICIPANTES:*\n';
                 for (let i = 0; i < ranking.length; i++) {
                     const [userId, count] = ranking[i];
-                    const usuario = db.obterUsuario(userId);
+                    const usuario = db.user.obterUsuario(userId);
                     const nome = usuario?.nome || userId.split('@')[0];
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
                     statsMsg += `${medal} ${nome} - ${count} participaç${count > 1 ? 'ões' : 'ão'}\n`;
@@ -438,25 +479,25 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
         // --- COMANDO PRINCIPAL: ENTRAR OU MOSTRAR ---
 
-        let listaAtiva = db.obterListaAtiva(chatJid);
+        let listaAtiva = db.list.obterListaAtiva(chatJid);
         const nomeEntrada = args.join(' ');
 
         if (nomeEntrada) {
-            // É uma tentativa de entrar na lista
+            // É uma tentativa de entrar na lista com nome específico
             if (!listaAtiva) {
                 // Cria lista
-                const tituloPadrao = db.obterTituloPadraoLista(chatJid) || 'Lista Geral';
-                db.criarLista(chatJid, tituloPadrao, senderJid);
-                listaAtiva = db.obterListaAtiva(chatJid);
+                const tituloPadrao = db.list.obterTituloPadraoLista(chatJid) || 'Lista Geral';
+                db.list.criarLista(chatJid, tituloPadrao, senderJid);
+                listaAtiva = db.list.obterListaAtiva(chatJid);
             }
 
             // Atualiza o nome do usuário no banco global se for um JID
             if (senderJid.includes('@s.whatsapp.net')) {
-                db.atualizarNomeUsuario(senderJid, nomeEntrada);
+                db.user.atualizarNomeUsuario(senderJid, nomeEntrada);
             }
 
             try {
-                const resultado = db.adicionarMembroLista(listaAtiva.id, senderJid);
+                const resultado = db.list.adicionarMembroLista(listaAtiva.id, senderJid);
                 if (!resultado) {
                     await sock.sendMessage(chatJid, { text: '⚠️ Você já está na lista! Use *!lista sair* se quiser sair.' });
                 } else {
@@ -469,20 +510,60 @@ Encerra a lista atual (Apenas Admin/Criador).`;
             return this.mostrarLista(sock, chatJid, db);
 
         } else {
-            // Apenas "!lista" -> Mostrar lista
+            // Apenas "!l" -> Adicionar automaticamente com nome salvo
+
+            // Cria lista se não existir
             if (!listaAtiva) {
-                const tituloPadrao = db.obterTituloPadraoLista(chatJid) || 'Lista Geral';
-                db.criarLista(chatJid, tituloPadrao, senderJid);
-                listaAtiva = db.obterListaAtiva(chatJid);
-
-                // Adiciona automaticamente quem criou a lista
-                const usuario = db.obterUsuario(senderJid);
-                const nomeUsuario = usuario && usuario.nome ? usuario.nome : senderJid.split('@')[0];
-                db.adicionarMembroLista(listaAtiva.id, senderJid);
-
-                await sock.sendMessage(chatJid, { text: `🆕 Nova lista iniciada!\n✅ ${nomeUsuario} foi adicionado(a) à lista.` });
+                const tituloPadrao = db.list.obterTituloPadraoLista(chatJid) || 'Lista Geral';
+                db.list.criarLista(chatJid, tituloPadrao, senderJid);
+                listaAtiva = db.list.obterListaAtiva(chatJid);
             }
-            return this.mostrarLista(sock, chatJid, db);
+
+            // Tenta obter o nome do usuário
+            const usuario = db.user.obterUsuario(senderJid);
+            let nomeUsuario = null;
+
+            if (usuario && usuario.nome) {
+                // Tem nome salvo no banco
+                nomeUsuario = usuario.nome;
+            } else if (senderJid.includes('@s.whatsapp.net')) {
+                // Tenta pegar o nome do contato do WhatsApp
+                try {
+                    const pushName = msg.pushName;
+                    if (pushName && pushName.trim()) {
+                        nomeUsuario = pushName;
+                        // Salva o nome no banco para próximas vezes
+                        db.user.atualizarNomeUsuario(senderJid, nomeUsuario);
+                    }
+                } catch (e) {
+                    console.error('Erro ao obter pushName:', e);
+                }
+            }
+
+            // Se não conseguiu obter nome, pede para o usuário informar
+            if (!nomeUsuario) {
+                await sock.sendMessage(chatJid, {
+                    text: '👋 Olá! Para entrar na lista, preciso que você informe seu nome.\n\n' +
+                        'Use: *!l [seu nome]*\n\n' +
+                        'Exemplo: !l João Silva'
+                });
+                return this.mostrarLista(sock, chatJid, db);
+            }
+
+            // Adiciona o usuário à lista com o nome obtido
+            try {
+                const resultado = db.list.adicionarMembroLista(listaAtiva.id, senderJid);
+                if (!resultado) {
+                    // Já está na lista, apenas mostra
+                    return this.mostrarLista(sock, chatJid, db);
+                } else {
+                    await sock.sendMessage(chatJid, { text: `✅ ${nomeUsuario} foi adicionado(a) à lista!` });
+                    return this.mostrarLista(sock, chatJid, db);
+                }
+            } catch (e) {
+                console.error('Erro ao adicionar membro:', e);
+                return this.mostrarLista(sock, chatJid, db);
+            }
         }
     },
 
@@ -500,10 +581,10 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
     // Função auxiliar para formatar e mostrar a lista
     async mostrarLista(sock, chatJid, db) {
-        const listaAtiva = db.obterListaAtiva(chatJid);
+        const listaAtiva = db.list.obterListaAtiva(chatJid);
         if (!listaAtiva) return;
 
-        const membros = db.obterMembrosLista(listaAtiva.id);
+        const membros = db.list.obterMembrosLista(listaAtiva.id);
         const total = membros.length;
 
         // Formata a data
@@ -523,7 +604,7 @@ Encerra a lista atual (Apenas Admin/Criador).`;
 
                 // Se for JID, tenta pegar o nome do banco
                 if (m.id_usuario.includes('@s.whatsapp.net')) {
-                    const usuario = db.obterUsuario(m.id_usuario);
+                    const usuario = db.user.obterUsuario(m.id_usuario);
                     if (usuario && usuario.nome) {
                         nomeExibicao = usuario.nome;
                     } else {

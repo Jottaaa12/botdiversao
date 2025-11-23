@@ -52,14 +52,15 @@ async function execute({ sock, msg, args }) {
         }
 
         // Usar yt-dlp via helper
-        const { getYtDlpPath } = require('../utils/ytDlpHelper');
-        const ytDlpPath = getYtDlpPath();
+        // Usar yt-dlp via helper
+        const { ensureYtDlpBinary } = require('../utils/ytDlpHelper');
+        const ytDlpPath = await ensureYtDlpBinary();
         if (!ytDlpPath) {
             throw new Error('yt-dlp não encontrado no sistema ou localmente.');
         }
         const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
 
-        const command = `"${ytDlpPath}" --ffmpeg-location "${path.dirname(ffmpegPath)}" -x --audio-format mp3 --audio-quality 128K -o "${outputTemplate}" "${url}"`;
+        const command = `"${ytDlpPath}" --ffmpeg-location "${path.dirname(ffmpegPath)}" -x --audio-format mp3 --audio-quality 128K --extractor-args "youtube:player_client=android" --user-agent "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36" -o "${outputTemplate}" "${url}"`;
         console.log('[.ytmp3] Executando yt-dlp para conversão em MP3...');
         await execAsync(command);
         console.log('[.ytmp3] Comando yt-dlp concluído.');

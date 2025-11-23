@@ -14,7 +14,7 @@ module.exports = {
             return;
         }
 
-        const ranking = db.obterRankingGrupo(chatJid, limite);
+        const ranking = db.groupInteraction.obterRankingGrupo(chatJid, limite);
 
         if (!ranking || ranking.length === 0) {
             await sock.sendMessage(chatJid, {

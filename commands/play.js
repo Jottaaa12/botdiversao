@@ -52,15 +52,17 @@ async function execute({ sock, msg, args }) {
         }
 
         // Usar yt-dlp via helper
-        const { getYtDlpPath } = require('../utils/ytDlpHelper');
-        const ytDlpPath = getYtDlpPath();
+        // Usar yt-dlp via helper
+        const { ensureYtDlpBinary } = require('../utils/ytDlpHelper');
+        const ytDlpPath = await ensureYtDlpBinary();
         if (!ytDlpPath) {
             throw new Error('yt-dlp não encontrado no sistema ou localmente.');
         }
         const outputTemplate = path.join(tempDir, '%(title)s.%(ext)s');
 
         // Otimização: Baixar M4A diretamente para evitar conversão lenta para MP3
-        const command = `"${ytDlpPath}" --ffmpeg-location "${path.dirname(ffmpegPath)}" -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format m4a -o "${outputTemplate}" "${url}"`;
+        // Adicionando argumentos para evitar erro de "Sign in to confirm you're not a bot"
+        const command = `"${ytDlpPath}" --ffmpeg-location "${path.dirname(ffmpegPath)}" -f "bestaudio[ext=m4a]/bestaudio" --extract-audio --audio-format m4a --extractor-args "youtube:player_client=android" --user-agent "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36" -o "${outputTemplate}" "${url}"`;
         console.log('Executando comando otimizado:', command);
         const { stdout, stderr } = await execAsync(command);
         console.log('yt-dlp stdout:', stdout);

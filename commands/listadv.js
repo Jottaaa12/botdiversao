@@ -15,7 +15,7 @@ module.exports = {
             // Se um usuário for mencionado, lista as advertências dele
             if (mentionedJids.length > 0) {
                 const targetJid = mentionedJids[0];
-                const warnings = db.obterAdvertenciasUsuario(chatJid, targetJid);
+                const warnings = db.groupInteraction.obterAdvertenciasUsuario(chatJid, targetJid);
 
                 if (warnings.length === 0) {
                     return `O membro @${targetJid.split('@')[0]} não possui nenhuma advertência.`;
@@ -25,19 +25,19 @@ module.exports = {
                 warnings.forEach((warn, index) => {
                     const date = new Date(warn.timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
                     response += `*${index + 1}.* Motivo: ${warn.motivo}\n`
-                             + `   - Autor: @${warn.id_autor.split('@')[0]}\n`
-                             + `   - Data: ${date}\n\n`;
+                        + `   - Autor: @${warn.id_autor.split('@')[0]}\n`
+                        + `   - Data: ${date}\n\n`;
                 });
-                
+
                 // Adiciona todos os JIDs mencionados na resposta para garantir a marcação
                 const allMentions = [targetJid, ...warnings.map(w => w.id_autor)];
-                
+
                 await sock.sendMessage(chatJid, { text: response, mentions: allMentions });
                 return;
             }
 
             // Se ninguém for mencionado, lista um resumo de todos os membros com advertências
-            const allWarnings = db.obterAdvertenciasGrupo(chatJid);
+            const allWarnings = db.groupInteraction.obterAdvertenciasGrupo(chatJid);
             if (allWarnings.length === 0) {
                 return 'Ninguém neste grupo possui advertências.';
             }

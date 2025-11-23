@@ -31,17 +31,17 @@ Exemplo: .config prefix !`;
     switch (opcao.toLowerCase()) {
         case 'prefix':
             if (!valor) return 'Digite o novo prefixo!';
-            db.salvarConfiguracao('prefixo', valor);
+            db.config.salvarConfiguracao('prefixo', valor);
             return `✅ Prefixo alterado para: ${valor}`;
 
         case 'dono':
             if (!valor) return 'Digite o nome do dono!';
-            db.salvarConfiguracao('dono', valor);
+            db.config.salvarConfiguracao('dono', valor);
             return `✅ Dono definido como: ${valor}`;
 
         case 'contato':
             if (!valor) return 'Digite o contato do dono!';
-            db.salvarConfiguracao('contato_dono', valor);
+            db.config.salvarConfiguracao('contato_dono', valor);
             return `✅ Contato do dono definido como: ${valor}`;
 
         case 'idioma':
@@ -49,19 +49,19 @@ Exemplo: .config prefix !`;
             if (!idiomasValidos.includes(valor)) {
                 return `Idioma inválido! Use: ${idiomasValidos.join(', ')}`;
             }
-            db.salvarConfiguracao('idioma', valor);
+            db.config.salvarConfiguracao('idioma', valor);
             return `✅ Idioma alterado para: ${valor}`;
 
         case 'anuncios':
             if (!['on', 'off'].includes(valor)) {
                 return 'Use: on ou off';
             }
-            db.salvarConfiguracao('anuncios', valor);
+            db.config.salvarConfiguracao('anuncios', valor);
             return `✅ Anúncios ${valor === 'on' ? 'ativados' : 'desativados'}`;
 
         case 'versao':
             if (!valor) return 'Digite a versão!';
-            db.salvarConfiguracao('versao', valor);
+            db.config.salvarConfiguracao('versao', valor);
             return `✅ Versão definida como: ${valor}`;
 
         default:

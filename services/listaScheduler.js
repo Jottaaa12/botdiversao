@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const { canSendMessages } = require('../utils/connectionStatus');
 
 function iniciarAgendamentos(sock, db) {
     console.log('[Scheduler] Iniciando serviço de agendamento de listas...');
@@ -8,7 +9,7 @@ function iniciarAgendamentos(sock, db) {
     cron.schedule('0 0 * * *', () => {
         console.log('[Scheduler] Executando reset diário de listas...');
         try {
-            const count = db.resetarListasAtivas();
+            const count = db.list.resetarListasAtivas();
             console.log(`[Scheduler] Reset concluído. ${count} listas foram encerradas.`);
         } catch (error) {
             console.error('[Scheduler] Erro ao resetar listas:', error);
@@ -20,6 +21,12 @@ function iniciarAgendamentos(sock, db) {
     // 2. Envio automático e Abertura automática
     // Verifica a cada minuto
     cron.schedule('* * * * *', async () => {
+        // Verifica se o bot está conectado antes de processar agendamentos
+        if (!canSendMessages(sock)) {
+            console.log('⚠️ [Scheduler] Bot desconectado - Pulando verificação de listas agendadas');
+            return;
+        }
+
         const agora = new Date();
         // Formata hora atual para HH:MM
         const horas = String(agora.getHours()).padStart(2, '0');
@@ -29,22 +36,30 @@ function iniciarAgendamentos(sock, db) {
 
         try {
             // --- ENVIO AUTOMÁTICO ---
-            const gruposEnvio = db.obterGruposComEnvioAtivo();
+            const gruposEnvio = db.list.obterGruposComEnvioAtivo();
 
             for (const config of gruposEnvio) {
                 if (config.horario_envio === horarioAtual) {
-                    const chatJid = config.id_grupo;
-                    const listaAtiva = db.obterListaAtiva(chatJid);
+                    // Verifica dias de envio
+                    const diasConfigurados = config.dias_envio ? config.dias_envio.split(',').map(Number) : [0, 1, 2, 3, 4, 5, 6]; // Padrão: todos os dias se null
 
-                    if (listaAtiva) {
-                        console.log(`[Scheduler] Enviando lista automática para o grupo ${chatJid}...`);
-                        await enviarListaAtualizada(sock, chatJid, db, listaAtiva.id);
+                    if (diasConfigurados.includes(diaSemana)) {
+                        const chatJid = config.id_grupo;
+                        const listaAtiva = db.list.obterListaAtiva(chatJid);
+
+                        if (listaAtiva) {
+                            console.log(`[Scheduler] Enviando lista automática para o grupo ${chatJid}...`);
+                            await enviarListaAtualizada(sock, chatJid, db, listaAtiva.id);
+                        } else {
+                            // Registra erro no histórico (lista não encontrada/ativa)
+                            db.list.registrarEnvioLista(chatJid, false, 'Nenhuma lista ativa encontrada no momento do envio.');
+                        }
                     }
                 }
             }
 
             // --- ABERTURA AUTOMÁTICA ---
-            const gruposAbertura = db.obterGruposComAberturaAtiva();
+            const gruposAbertura = db.list.obterGruposComAberturaAtiva();
 
             for (const config of gruposAbertura) {
                 // Verifica horário
@@ -56,16 +71,16 @@ function iniciarAgendamentos(sock, db) {
                         const chatJid = config.id_grupo;
 
                         // Verifica se já existe lista ativa
-                        const listaAtiva = db.obterListaAtiva(chatJid);
+                        const listaAtiva = db.list.obterListaAtiva(chatJid);
                         if (!listaAtiva) {
                             console.log(`[Scheduler] Abrindo lista automática para ${chatJid}...`);
 
-                            const tituloPadrao = db.obterTituloPadraoLista(chatJid) || "Lista do Dia";
+                            const tituloPadrao = db.list.obterTituloPadraoLista(chatJid) || "Lista do Dia";
                             // Usamos o ID do bot como criador se possível, ou um placeholder
                             const botId = sock.user?.id || 'sistema';
 
-                            db.criarLista(chatJid, tituloPadrao, botId);
-                            const novaLista = db.obterListaAtiva(chatJid);
+                            db.list.criarLista(chatJid, tituloPadrao, botId);
+                            const novaLista = db.list.obterListaAtiva(chatJid);
 
                             await enviarListaAtualizada(sock, chatJid, db, novaLista.id);
 
@@ -89,10 +104,16 @@ function iniciarAgendamentos(sock, db) {
 
 // Função auxiliar para enviar a lista
 async function enviarListaAtualizada(sock, chatJid, db, idLista) {
-    const lista = db.obterListaAtiva(chatJid);
+    // Verifica conexão antes de enviar
+    if (!canSendMessages(sock)) {
+        console.warn(`⚠️ [Scheduler] Não foi possível enviar lista - Bot desconectado`);
+        return;
+    }
+
+    const lista = db.list.obterListaAtiva(chatJid);
     if (!lista) return;
 
-    const membros = db.obterMembrosLista(lista.id);
+    const membros = db.list.obterMembrosLista(lista.id);
 
     const dataCriacao = new Date(lista.data_criacao);
     const dataFormatada = dataCriacao.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -105,7 +126,7 @@ async function enviarListaAtualizada(sock, chatJid, db, idLista) {
     } else {
         for (let i = 0; i < membros.length; i++) {
             const membro = membros[i];
-            const usuarioDb = db.obterUsuario(membro.id_usuario);
+            const usuarioDb = db.user.obterUsuario(membro.id_usuario);
             const numero = membro.id_usuario.split(':')[0].replace('@s.whatsapp.net', '');
             const nome = usuarioDb?.nome || numero;
 
@@ -119,8 +140,11 @@ async function enviarListaAtualizada(sock, chatJid, db, idLista) {
 
     try {
         await sock.sendMessage(chatJid, { text: mensagem });
+        console.log(`✅ [Scheduler] Lista enviada com sucesso para ${chatJid}`);
+        db.list.registrarEnvioLista(chatJid, true); // Registra sucesso
     } catch (e) {
-        console.error(`[Scheduler] Falha ao enviar mensagem para ${chatJid}:`, e);
+        console.error(`❌ [Scheduler] Falha ao enviar mensagem para ${chatJid}:`, e.message);
+        db.list.registrarEnvioLista(chatJid, false, e.message); // Registra erro
     }
 }
 

@@ -26,7 +26,7 @@ module.exports = {
         }
 
         // Verificar se o usuário já está casado
-        const conjugeAtual = db.obterConjuge(senderJid);
+        const conjugeAtual = db.groupInteraction.obterConjuge(senderJid);
         if (conjugeAtual) {
             const numero = conjugeAtual.conjuge.split(':')[0].replace('@s.whatsapp.net', '');
             await sock.sendMessage(chatJid, {
@@ -37,7 +37,7 @@ module.exports = {
         }
 
         // Verificar se o parceiro já está casado
-        const conjugeParceiro = db.obterConjuge(parceiro);
+        const conjugeParceiro = db.groupInteraction.obterConjuge(parceiro);
         if (conjugeParceiro) {
             const numero = conjugeParceiro.conjuge.split(':')[0].replace('@s.whatsapp.net', '');
             const numeroParceiro = parceiro.split(':')[0].replace('@s.whatsapp.net', '');

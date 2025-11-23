@@ -3,7 +3,7 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 async function handleAntiDelete(sock, msg, isGroup, chatJid, messageStore, db) {
     if (msg.message?.protocolMessage?.type === 0) { // Type 0 = REVOKE (delete)
         const deletedMessageId = msg.message.protocolMessage.key.id;
-        const antideleteEnabled = isGroup && db.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
+        const antideleteEnabled = isGroup && db.config.obterConfiguracaoGrupo(chatJid, 'antidelete') === 'true';
 
         if (antideleteEnabled && messageStore.has(deletedMessageId)) {
             const deletedMsg = messageStore.get(deletedMessageId);
@@ -25,7 +25,7 @@ async function handleAntiDelete(sock, msg, isGroup, chatJid, messageStore, db) {
 }
 
 async function handleAntiMute(sock, msg, isGroup, chatJid, senderJid, db) {
-    if (isGroup && await db.isMuted(senderJid, chatJid)) {
+    if (isGroup && await db.groupInteraction.isMuted(senderJid, chatJid)) {
         console.log(`[MUTE] Mensagem de usuário mutado (${senderJid}) no grupo (${chatJid}) detectada. Apagando mensagem.`);
         try {
             await sock.sendMessage(chatJid, { delete: msg.key });
@@ -40,7 +40,7 @@ async function handleAntiMute(sock, msg, isGroup, chatJid, senderJid, db) {
 
 async function handleAntiLink(sock, msg, isGroup, chatJid, senderJid, message, db, getPermissionLevel) {
     if (isGroup && message) {
-        const antilinkEnabled = db.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
+        const antilinkEnabled = db.config.obterConfiguracaoGrupo(chatJid, 'antilink') === 'true';
         if (antilinkEnabled) {
             const urlRegex = /https?:\/\/[^\s]+/;
             if (urlRegex.test(message)) {
@@ -113,7 +113,7 @@ async function handleAntiEdit(sock, updates, messageStore, db) {
             console.log('[ANTIEDIT DEBUG] Message ID:', messageId);
 
             // Verificar se o antiedit está ativo
-            const antieditEnabled = isGroup && db.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
+            const antieditEnabled = isGroup && db.config.obterConfiguracaoGrupo(chatJid, 'antiedit') === 'true';
             console.log('[ANTIEDIT DEBUG] Anti-edit ativo?', antieditEnabled);
             console.log('[ANTIEDIT DEBUG] Mensagem está no store?', messageStore.has(messageId));
 

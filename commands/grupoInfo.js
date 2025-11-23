@@ -14,7 +14,7 @@ module.exports = {
 
         // Caso especial para o comando "regras"
         if (commandName === 'regras') {
-            const regras = db.obterConfiguracaoGrupo(chatJid, 'regras');
+            const regras = db.config.obterConfiguracaoGrupo(chatJid, 'regras');
             if (regras) {
                 return `📜 *Regras do Grupo*\n\n${regras}`;
             } else {
@@ -25,7 +25,7 @@ module.exports = {
         try {
             const metadata = await sock.groupMetadata(chatJid);
             const adminList = metadata.participants.filter(p => p.admin).map(p => `@${p.id.split('@')[0]}`);
-            
+
             let ephemeralText = 'Desativado';
             if (metadata.ephemeralDuration) {
                 const duration = metadata.ephemeralDuration;
@@ -36,17 +36,17 @@ module.exports = {
             }
 
             const response = `*📊 Informações do Grupo*\n\n` +
-                             `*Nome:* ${metadata.subject}\n` +
-                             `*ID:* ${metadata.id}\n\n` +
-                             `*Descrição:*\n${metadata.desc ? metadata.desc : 'Nenhuma descrição.'}\n\n` +
-                             `*Membros:* ${metadata.participants.length}\n` +
-                             `*Admins:* ${adminList.length}\n` +
-                             `*Dono:* ${metadata.owner ? `@${metadata.owner.split('@')[0]}` : 'Não encontrado'}\n\n` +
-                             `*Mensagens Temporárias:* ${ephemeralText}\n` +
-                             `*Restrito a Admins (Enviar Msg):* ${metadata.announce ? 'Sim' : 'Não'}\n` +
-                             `*Restrito a Admins (Editar Info):* ${metadata.restrict ? 'Sim' : 'Não'}`;
+                `*Nome:* ${metadata.subject}\n` +
+                `*ID:* ${metadata.id}\n\n` +
+                `*Descrição:*\n${metadata.desc ? metadata.desc : 'Nenhuma descrição.'}\n\n` +
+                `*Membros:* ${metadata.participants.length}\n` +
+                `*Admins:* ${adminList.length}\n` +
+                `*Dono:* ${metadata.owner ? `@${metadata.owner.split('@')[0]}` : 'Não encontrado'}\n\n` +
+                `*Mensagens Temporárias:* ${ephemeralText}\n` +
+                `*Restrito a Admins (Enviar Msg):* ${metadata.announce ? 'Sim' : 'Não'}\n` +
+                `*Restrito a Admins (Editar Info):* ${metadata.restrict ? 'Sim' : 'Não'}`;
 
-            await sock.sendMessage(chatJid, { 
+            await sock.sendMessage(chatJid, {
                 text: response,
                 mentions: metadata.participants.map(p => p.id)
             });
@@ -55,7 +55,7 @@ module.exports = {
             console.error('[InfoGrupo Error]', error);
             return 'Ocorreu um erro ao buscar as informações do grupo.';
         }
-        
+
         // Retorna null ou undefined pois a mensagem já foi enviada
         return;
     },

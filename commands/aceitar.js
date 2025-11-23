@@ -28,8 +28,8 @@ module.exports = {
         }
 
         // Verificar novamente se ambos ainda não estão casados
-        const conjugeSolicitante = db.obterConjuge(solicitante);
-        const conjugeReceptor = db.obterConjuge(senderJid);
+        const conjugeSolicitante = db.groupInteraction.obterConjuge(solicitante);
+        const conjugeReceptor = db.groupInteraction.obterConjuge(senderJid);
 
         if (conjugeSolicitante || conjugeReceptor) {
             pedidosCasamento.delete(senderJid);

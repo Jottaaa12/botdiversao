@@ -7,7 +7,7 @@ const db = require('../database');
  * @returns {string} Uma resposta para o usuário.
  */
 function executeSetName(message, sender) {
-    const prefixo = db.obterConfiguracao('prefixo') || '/';
+    const prefixo = db.config.obterConfiguracao('prefixo') || '/';
     const commandBody = message.substring(prefixo.length).trim();
     const args = commandBody.split(' ');
     args.shift(); // remove o nome do comando
@@ -19,7 +19,7 @@ function executeSetName(message, sender) {
 
     try {
         const senderId = sender.split('@')[0];
-        db.atualizarNomeUsuario(sender, newName);
+        db.user.atualizarNomeUsuario(sender, newName);
         console.log(`Nome do usuário ${senderId} atualizado para: ${newName}`);
         return `Prazer em te conhecer, ${newName}! 😊 Vou me lembrar de você assim agora.`;
     } catch (error) {
