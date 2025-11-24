@@ -212,8 +212,13 @@ function getAvailableCommands(prefixo = '/') {
 
 /**
  * Gera resposta da IA, incluindo lógica de pergunta sobre o criador.
+ * @param {string} message - Mensagem do usuário
+ * @param {object} usuario - Dados do usuário
+ * @param {string} prefixo - Prefixo de comandos
+ * @param {string} userId - ID do usuário
+ * @param {object} contextoRifa - Contexto opcional da rifa (rifa, numerosUsuario, compraPendente)
  */
-async function generateResponse(message, usuario, prefixo = '/', userId) {
+async function generateResponse(message, usuario, prefixo = '/', userId, contextoRifa = null) {
     try {
         const userName = usuario?.nome?.split(' ')[0] || 'amigo(a)';
         const session = getChatSession(userId, userName, prefixo);
@@ -294,8 +299,81 @@ Crio bots **sob medida** para suas necessidades específicas, seja para:
 🔧 *Agora voltando ao modo Severino... espero que tenha ajudado!* 😅`;
         }
 
-        const result = await withTimeout(session.chat.sendMessage(message));
+        // ==========================================
+        // SISTEMA DE RIFAS CONVERSACIONAL
+        // ==========================================
+
+        // Se foi fornecido contexto de rifa, injetar no prompt
+        let promptComContexto = message;
+        if (contextoRifa && contextoRifa.rifa) {
+            const { rifa, numerosUsuario = [], compraPendente = null } = contextoRifa;
+
+            // Construir contexto adicional
+            let contextoAdicional = `\n\n[CONTEXTO DA RIFA ATIVA]\n`;
+            contextoAdicional += `Título: ${rifa.titulo}\n`;
+            contextoAdicional += `Prêmio: ${rifa.premio}\n`;
+            contextoAdicional += `Preço por número: R$ ${rifa.preco_numero.toFixed(2)}\n`;
+            contextoAdicional += `Data do sorteio: ${new Date(rifa.data_sorteio).toLocaleString('pt-BR')}\n`;
+
+            if (numerosUsuario.length > 0) {
+                contextoAdicional += `Números do usuário (confirmados): ${numerosUsuario.join(', ')}\n`;
+            }
+
+            if (compraPendente && compraPendente.numeros) {
+                try {
+                    const numsPendentes = typeof compraPendente.numeros === 'string'
+                        ? JSON.parse(compraPendente.numeros)
+                        : compraPendente.numeros;
+
+                    if (Array.isArray(numsPendentes) && numsPendentes.length > 0) {
+                        contextoAdicional += `Números aguardando aprovação: ${numsPendentes.join(', ')}\n`;
+                        contextoAdicional += `Status: Aguardando confirmação do administrador\n`;
+                    }
+                } catch (error) {
+                    console.error('[Gemini] Erro ao processar números pendentes:', error);
+                }
+            }
+
+            contextoAdicional += `\nINSTRUÇÕES ESPECIAIS:\n`;
+            contextoAdicional += `- Se o usuário perguntar sobre a data do sorteio, responda com a data acima\n`;
+            contextoAdicional += `- Se perguntar sobre seus números, liste os números confirmados e/ou pendentes\n`;
+            contextoAdicional += `- Se perguntar sobre status da compra, informe se está aguardando aprovação ou já confirmado\n`;
+            contextoAdicional += `- Se o usuário quiser COMPRAR números ou participar da rifa, responda APENAS: ##INICIAR_COMPRA##\n`;
+            contextoAdicional += `- Seja natural e conversacional, use as informações acima para responder\n`;
+
+            promptComContexto = contextoAdicional + "\n\nMensagem do usuário: " + message;
+        }
+
+        try {
+            const raffleAIService = require('./raffleAIService');
+            const db = require('../database/index');
+
+            // 1. Verificar se há sessão de compra ativa
+            const sessaoAtiva = db.raffle.obterSessaoCompra(userId, null);
+
+            if (sessaoAtiva) {
+                // Se tem sessão ativa, delega para o messageHandler (via flag)
+                // O messageHandler vai interceptar e chamar raffleAIService
+                return "##RIFA_DETECTED##";
+            } else {
+                // Se não tem sessão, verifica se é interesse novo
+                if (raffleAIService.detectarInteresseRifa(message)) {
+                    return "##RIFA_DETECTED##";
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao verificar rifa no geminiService:", e);
+        }
+        // ==========================================
+
+        const result = await withTimeout(session.chat.sendMessage(promptComContexto));
         const response = result.response.text();
+
+        // Detectar se a IA quer iniciar compra
+        if (response.includes('##INICIAR_COMPRA##')) {
+            return "##RIFA_DETECTED##";
+        }
+
         session.messageCount++;
 
         if (session.messageCount > MAX_HISTORY_MESSAGES) {

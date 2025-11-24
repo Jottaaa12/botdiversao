@@ -20,8 +20,10 @@ async function execute({ sock, msg, args, senderJid, chatJid, prefixo, db, lista
 
     // LISTAR GRUPOS ATIVOS
     if (subcomando === 'listar') {
+        console.log(`[DEBUG lista_horario] Executando subcomando LISTAR`);
         const gruposAtivos = db.list.listarGruposComListaAtiva();
         if (gruposAtivos.length === 0) {
+            console.log(`[DEBUG lista_horario] Nenhum grupo ativo, retornando mensagem`);
             return 'ℹ️ Nenhum grupo com lista de horário ativa no momento.';
         }
 
@@ -36,6 +38,7 @@ async function execute({ sock, msg, args, senderJid, chatJid, prefixo, db, lista
             const dias = g.dias_envio ? g.dias_envio.split(',').map(d => ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d]).join(', ') : 'Todos';
             resposta += `🔹 *${nomeGrupo}*\n   🕒 Horário: ${g.horario_envio}\n   📅 Dias: ${dias}\n   🆔 ID: ${g.id_grupo}\n\n`;
         }
+        console.log(`[DEBUG lista_horario] Retornando lista de ${gruposAtivos.length} grupos`);
         return resposta;
     }
 

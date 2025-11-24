@@ -12,6 +12,8 @@ module.exports = {
     config: require('./repositories/configRepository'),
     list: require('./repositories/listRepository'),
     schedule: require('./repositories/scheduleRepository'),
+    raffle: require('./repositories/raffleRepository'),
+    connection: dbConnection,
 
     // Função para fechar a conexão, que deve ser chamada no final do ciclo de vida da aplicação
     close: () => {

@@ -22,9 +22,11 @@ module.exports = {
 
             // --- SUBCOMANDO: STATUS GLOBAL ---
             if (subcomando === 'status' || subcomando === 'ver' || subcomando === 'info') {
+                console.log(`[DEBUG lista_abertura] Executando subcomando STATUS GLOBAL no PV`);
                 const gruposAtivos = db.list.obterGruposComAberturaAtiva();
 
                 if (gruposAtivos.length === 0) {
+                    console.log(`[DEBUG lista_abertura] Nenhum grupo ativo, retornando mensagem`);
                     return 'ℹ️ Nenhum grupo com abertura automática ativa no momento.';
                 }
 
@@ -45,6 +47,7 @@ module.exports = {
                     const diasTexto = mapaDias[g.dias_abertura] || g.dias_abertura;
                     resposta += `🔹 *${nomeGrupo}*\n   ⏰ Horário: ${g.horario_abertura}\n   📅 Dias: ${diasTexto}\n   🆔 ID: ${g.id_grupo}\n\n`;
                 }
+                console.log(`[DEBUG lista_abertura] Retornando lista de ${gruposAtivos.length} grupos`);
                 return resposta;
             }
 
@@ -83,12 +86,15 @@ module.exports = {
 
         // --- SUBCOMANDO: STATUS ---
         if (subcomando === 'status' || subcomando === 'ver' || subcomando === 'info') {
+            console.log(`[DEBUG lista_abertura] Executando subcomando STATUS em grupo ${chatJid}`);
             const config = db.list.obterHorarioAberturaLista(chatJid);
 
             if (!config || !config.horario) {
+                console.log(`[DEBUG lista_abertura] Sem configuração, enviando mensagem de erro`);
                 await sock.sendMessage(chatJid, {
                     text: '❌ Não há abertura automática configurada para este grupo.\n\n💡 Use: !lista_abertura HH:MM [dias]\n\nExemplo: !lista_abertura 08:00 seg-sex'
                 });
+                console.log(`[DEBUG lista_abertura] Mensagem de erro enviada, retornando`);
                 return;
             }
 
@@ -104,9 +110,11 @@ module.exports = {
             const configCompleta = db.list.obterGruposComAberturaAtiva().find(c => c.id_grupo === chatJid);
             const statusAtivo = configCompleta ? '✅ Ativa' : '⏸️ Pausada';
 
+            console.log(`[DEBUG lista_abertura] Enviando mensagem de status`);
             await sock.sendMessage(chatJid, {
                 text: `📊 *STATUS DA ABERTURA AUTOMÁTICA*\n\n⏰ Horário: ${config.horario}\n📅 Dias: ${diasTexto}\n${statusAtivo}\n\n━━━━━━━━━━━━━━━━━━━\n💡 Comandos disponíveis:\n• !lista_abertura pausar\n• !lista_abertura reativar\n• !lista_abertura cancelar`
             });
+            console.log(`[DEBUG lista_abertura] Mensagem de status enviada, retornando`);
             return;
         }
 

@@ -279,6 +279,97 @@ const initializeDatabase = () => {
         )
     `);
 
+    // --- SISTEMA DE RIFAS ---
+
+    // Tabela de rifas
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS rifas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_grupo TEXT, -- null = rifa em PV
+            titulo TEXT NOT NULL,
+            descricao TEXT,
+            premio TEXT NOT NULL,
+            preco_numero REAL NOT NULL,
+            quantidade_numeros INTEGER NOT NULL,
+            data_sorteio DATETIME NOT NULL,
+            status TEXT DEFAULT 'ativa', -- 'ativa', 'encerrada', 'cancelada', 'sorteada'
+            numero_sorteado INTEGER,
+            id_ganhador TEXT,
+            nome_ganhador TEXT,
+            sorteio_automatico BOOLEAN DEFAULT TRUE,
+            id_criador TEXT NOT NULL,
+            grupo_vinculado_id TEXT, -- ID do grupo vinculado
+            grupo_vinculado_link TEXT, -- Link de convite do grupo
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            sorteado_em DATETIME
+        )
+    `);
+
+    // Tabela de números da rifa
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS numeros_rifa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_rifa INTEGER NOT NULL,
+            numero INTEGER NOT NULL,
+            id_comprador TEXT,
+            nome_comprador TEXT,
+            cidade_comprador TEXT,
+            status TEXT DEFAULT 'disponivel', -- 'disponivel', 'reservado', 'vendido'
+            reservado_ate DATETIME,
+            comprado_em DATETIME,
+            FOREIGN KEY (id_rifa) REFERENCES rifas(id),
+            UNIQUE(id_rifa, numero)
+        )
+    `);
+
+    // Tabela de compras pendentes (aguardando confirmação do admin)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS compras_pendentes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_rifa INTEGER NOT NULL,
+            id_usuario TEXT NOT NULL,
+            nome_usuario TEXT,
+            cidade_usuario TEXT,
+            numeros TEXT NOT NULL, -- JSON array: [5, 8, 9, 20]
+            valor_total REAL NOT NULL,
+            comprovante_path TEXT, -- caminho do comprovante salvo
+            status TEXT DEFAULT 'aguardando', -- 'aguardando', 'confirmado', 'recusado'
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            confirmado_em DATETIME,
+            FOREIGN KEY (id_rifa) REFERENCES rifas(id)
+        )
+    `);
+
+    // Tabela de dados dos compradores (para reutilização)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS dados_compradores (
+            id_usuario TEXT PRIMARY KEY,
+            nome_completo TEXT,
+            cidade TEXT,
+            atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // Tabela de sessões de compra com IA
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS sessoes_compra_ia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_usuario TEXT NOT NULL,
+            id_rifa INTEGER NOT NULL,
+            etapa TEXT NOT NULL, -- 'interesse', 'escolha_numeros', 'aguardando_comprovante', 'coletando_dados', 'finalizado'
+            numeros_escolhidos TEXT, -- JSON array temporário
+            tem_comprovante BOOLEAN DEFAULT FALSE,
+            tem_nome BOOLEAN DEFAULT FALSE,
+            tem_cidade BOOLEAN DEFAULT FALSE,
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (id_rifa) REFERENCES rifas(id),
+            UNIQUE(id_usuario, id_rifa)
+        )
+    `);
+
+    // --- FIM SISTEMA DE RIFAS ---
+
     // Migração para adicionar total_envios em agendamentos se não existir
     try {
         const infoAgendamentos = db.pragma('table_info(agendamentos)');
@@ -329,6 +420,18 @@ const initializeDatabase = () => {
             db.exec("ALTER TABLE auto_respostas ADD COLUMN match_type TEXT DEFAULT 'exact'");
         }
 
+        // Migração rifas (grupo vinculado)
+        const infoRifas = db.pragma('table_info(rifas)');
+        const columnsRifas = infoRifas.map(col => col.name);
+        if (!columnsRifas.includes('grupo_vinculado_id')) {
+            console.log("Adicionando coluna 'grupo_vinculado_id' em 'rifas'...");
+            db.exec('ALTER TABLE rifas ADD COLUMN grupo_vinculado_id TEXT');
+        }
+        if (!columnsRifas.includes('grupo_vinculado_link')) {
+            console.log("Adicionando coluna 'grupo_vinculado_link' em 'rifas'...");
+            db.exec('ALTER TABLE rifas ADD COLUMN grupo_vinculado_link TEXT');
+        }
+
     } catch (error) {
         console.error("Erro nas migrações:", error);
     }
@@ -343,6 +446,13 @@ const initializeDatabase = () => {
             CREATE INDEX IF NOT EXISTS idx_agendamentos_ativo 
             ON agendamentos(ativo, horario);
         `);
+
+        // Índices Rifas
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_rifas_status ON rifas(status, data_sorteio);`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_numeros_status ON numeros_rifa(id_rifa, status);`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_compras_pendentes ON compras_pendentes(status, id_usuario);`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_sessoes_compra ON sessoes_compra_ia(id_usuario, etapa);`);
+
         console.log("Índices de performance verificados/criados.");
     } catch (error) {
         console.error("Erro ao criar índices:", error);

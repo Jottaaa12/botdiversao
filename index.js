@@ -58,8 +58,12 @@ async function initializeBot() {
     if (!agendamentosIniciados) {
         const { iniciarAgendamentos } = require('./services/listaScheduler');
         const { iniciarAgendador } = require('./utils/agendadorScheduler');
+        const { startRaffleScheduler } = require('./services/raffleScheduler');
+
         iniciarAgendamentos(sock, db);
         iniciarAgendador(sock, db);
+        startRaffleScheduler(sock);
+
         agendamentosIniciados = true;
         console.log('[Bot Manager] Agendamentos iniciados pela primeira vez.');
     }

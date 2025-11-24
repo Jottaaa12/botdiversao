@@ -21,6 +21,10 @@ const agendamentoSteps = new Map();
 const listaHorarioSteps = new Map();
 // --- Armazenamento de estado para lista abertura interativa ---
 const listaAberturaSteps = new Map();
+// --- Armazenamento de estado para criação de rifa interativa ---
+const rifaCreationSteps = new Map();
+// --- Armazenamento de estado para confirmação de rifa (admin) ---
+const rifaConfirmationSteps = new Map();
 // --- Armazenamento de pedidos de casamento pendentes ---
 const pedidosCasamento = new Map(); // Estrutura: usuarioAlvo -> { solicitante, chatJid, timestamp }
 // --- Armazenamento de mensagens para antiedit e antidelete ---
@@ -102,8 +106,9 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         return;
     }
 
-    // Ignorar mensagens próprias e broadcasts de status LOGO NO INÍCIO
-    if (msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') {
+    // CORREÇÃO: Ignorar mensagens enviadas pelo próprio bot
+    if (msg.key.fromMe) {
+        console.log(`[MessageHandler] Ignorando mensagem própria (fromMe=true)`);
         return;
     }
 
@@ -496,6 +501,47 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             }
         }
 
+        // --- LÓGICA DE TRATAMENTO DE CRIAÇÃO DE RIFA INTERATIVA ---
+        if (rifaCreationSteps.has(senderJid)) {
+            const command = commands.get('rifa');
+            if (command) {
+                const args = message.trim().split(' ');
+                const response = await command.execute({
+                    sock,
+                    msg,
+                    args,
+                    senderJid,
+                    chatJid,
+                    prefixo,
+                    db,
+                    rifaCreationSteps,
+                    isGroup,
+                    message // Passando a mensagem completa
+                });
+
+                if (response && typeof response === 'string') {
+                    await sock.sendMessage(chatJid, { text: response });
+                }
+                return; // Interrompe o processamento normal
+            }
+        }
+
+        // --- LÓGICA DE TRATAMENTO DE CONFIRMAÇÃO DE RIFA (ADMIN) ---
+        if (rifaConfirmationSteps.has(senderJid)) {
+            const input = message.trim().toLowerCase();
+            const raffleAIService = require('../services/raffleAIService');
+
+            if (input === 's' || input === 'sim') {
+                await raffleAIService.processarConfirmacaoAdmin(sock, chatJid, senderJid, 'confirmar', db);
+                rifaConfirmationSteps.delete(senderJid);
+                return;
+            } else if (input === 'n' || input === 'nao' || input === 'não') {
+                await raffleAIService.processarConfirmacaoAdmin(sock, chatJid, senderJid, 'recusar', db);
+                rifaConfirmationSteps.delete(senderJid);
+                return;
+            }
+        }
+
         // --- LÓGICA DE TRATAMENTO DE AUTO-RESPOSTA INTERATIVA ---
         if (autoRespostaSteps.has(senderJid)) {
             const command = commands.get('autoresposta');
@@ -623,6 +669,8 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                             forcaGames,
                             listaHorarioSteps,
                             listaAberturaSteps,
+                            rifaCreationSteps,
+                            rifaConfirmationSteps,
                             isGroup
                         });
                         console.log(`[Debug] Comando ${commandName} executado. Resposta:`, response ? 'Sim (conteúdo)' : 'Não/Vazia');
@@ -631,6 +679,7 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
 
                         if (response && typeof response === 'string') {
                             await sock.sendMessage(chatJid, { text: response });
+                            response = ''; // Limpa para evitar envio duplicado no final
                         }
                     } catch (error) {
                         console.error(`[Erro ao Executar Comando] '${commandName}':`, error);
@@ -788,7 +837,12 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
         // --- RESPOSTA AUTOMÁTICA DA IA EM CONVERSAS PRIVADAS ---
         // A IA só responde automaticamente em conversas privadas (não em grupos)
         // e apenas se o usuário ativou a funcionalidade com /ia on
-        if (!isCommand && !isGroup && message) {
+
+        // Verifica se é mídia (imagem ou documento)
+        const isMedia = msg.message?.imageMessage || msg.message?.documentMessage;
+
+        // Se for mídia ou tiver texto, e não for comando nem grupo
+        if (!isCommand && !isGroup && (message || isMedia)) {
             // Verificar se a IA está ativa para este usuário (ativa por padrão)
             const iaAtiva = db.config.obterConfiguracaoUsuario(senderJid, 'ia_ativa');
             const iaHabilitada = iaAtiva === null || iaAtiva === 'true'; // Ativa por padrão se não configurado
@@ -798,8 +852,63 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
                     console.log(`[IA] Gerando resposta para ${senderJid} em conversa privada...`);
                     await sock.sendPresenceUpdate('composing', chatJid);
 
-                    // Gerar resposta usando o sistema de histórico
-                    response = await aiService.generateResponse(message, usuario, prefixo, senderJid);
+                    // 1. Verifica se já existe uma sessão de rifa ativa para este usuário
+                    const sessaoRifa = db.raffle.obterSessaoCompra(senderJid, null);
+
+                    if (sessaoRifa) {
+                        // Se tem sessão, delega direto para o RaffleAIService (suporta texto e mídia)
+                        console.log(`[IA] Sessão de rifa ativa detectada. Delegando para RaffleAIService.`);
+                        const raffleAIService = require('../services/raffleAIService');
+                        const rifaResponse = await raffleAIService.continuarProcessoCompra(sock, chatJid, senderJid, message, msg, db, rifaConfirmationSteps);
+
+                        if (rifaResponse) {
+                            response = rifaResponse;
+                        }
+                    } else if (message) {
+                        const raffleAIService = require('../services/raffleAIService');
+
+                        // Coletar contexto da rifa se houver uma ativa
+                        let contextoRifa = null;
+                        try {
+                            let rifa = db.raffle.obterRifaAtiva(chatJid);
+                            if (!rifa) rifa = db.raffle.obterRifaAtivaGlobal();
+
+                            if (rifa) {
+                                const numerosUsuario = db.raffle.obterNumerosComprados(rifa.id, senderJid);
+                                const compraPendente = db.raffle.obterCompraPendenteAguardandoConfirmacao(senderJid);
+
+                                contextoRifa = {
+                                    rifa,
+                                    numerosUsuario,
+                                    compraPendente
+                                };
+                            }
+                        } catch (error) {
+                            console.error('[IA] Erro ao coletar contexto de rifa:', error);
+                        }
+
+                        // Tenta detectar intenção de rifa por palavras-chave (mais rápido e funciona sem API Key)
+                        if (raffleAIService.detectarInteresseRifa(message)) {
+                            console.log(`[IA] Intenção de rifa detectada por palavras-chave.`);
+                            const rifaResponse = await raffleAIService.processarInteresse(sock, chatJid, senderJid, db, message);
+                            if (rifaResponse) response = rifaResponse;
+                        } else {
+                            // Se não detectou rifa, usa o Gemini (com contexto se disponível)
+                            const aiResponse = await generateResponse(message, usuario, prefixo, senderJid, contextoRifa);
+
+                            if (aiResponse === "##RIFA_DETECTED##") {
+                                console.log(`[IA] Intenção de rifa detectada pelo Gemini. Iniciando RaffleAIService.`);
+                                const rifaResponse = await raffleAIService.processarInteresse(sock, chatJid, senderJid, db, message);
+                                if (rifaResponse) response = rifaResponse;
+                            } else {
+                                response = aiResponse;
+                            }
+                        }
+                    } else {
+                        // É mídia mas não tem sessão ativa -> ignora ou avisa
+                        // Por enquanto, ignoramos mídia solta sem contexto de rifa
+                        console.log('[IA] Mídia recebida sem sessão ativa. Ignorando.');
+                    }
 
                     await sock.sendPresenceUpdate('paused', chatJid);
                 } catch (error) {
