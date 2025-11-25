@@ -1,4 +1,4 @@
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { jidNormalizedUser, delay } = require('@whiskeysockets/baileys');
 const { getPermissionLevel } = require('../utils/auth');
 const db = require('../database');
 const fs = require('fs');
@@ -751,6 +751,121 @@ async function handleMessage(sock, m, { jidNormalizedUser, restartBot }) {
             }
         }
         // --- FIM AUTO-RESPOSTAS ---
+
+        // --- DETECÇÃO AUTOMÁTICA DE DESISTÊNCIA DA LISTA ---
+        if (!isCommand && isGroup && message) {
+            try {
+                // Verifica se existe uma lista ativa no grupo
+                const listaAtiva = db.list.obterListaAtiva(chatJid);
+
+                if (listaAtiva) {
+                    // Normaliza a mensagem removendo acentos e convertendo para minúsculas
+                    const msgNormalizada = message
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, ""); // Remove acentos
+
+                    // Padrões de desistência (com e sem acentos)
+                    const padroes = [
+                        /\b(nao|não)\s+(vou|vo|irei)\s+mais\b/i,
+                        /\b(n|ñ)\s+(vou|vo|irei)\s+mais\b/i,
+                        /\b(nao|não)\s+(vou|vo|irei)\b/i,
+                        /\b(n|ñ)\s+(vou|vo)\b/i
+                    ];
+
+                    // Verifica se algum padrão corresponde
+                    const desistiu = padroes.some(padrao => padrao.test(msgNormalizada));
+
+                    if (desistiu) {
+                        // Verifica se o usuário está na lista
+                        const membros = db.list.obterMembrosLista(listaAtiva.id);
+                        const estaNaLista = membros.some(m => m.id_usuario === senderJid);
+
+                        if (estaNaLista) {
+                            console.log(`[Lista Auto-Saída] ${senderJid} desistiu automaticamente em ${chatJid}`);
+
+                            // Remove da lista
+                            db.list.removerMembroLista(listaAtiva.id, senderJid);
+
+                            // Obtém o nome do usuário
+                            const usuarioLista = db.user.obterUsuario(senderJid);
+                            const nomeUsuario = usuarioLista?.nome || senderJid.split('@')[0];
+
+                            // Emojis de carinha triste aleatórios para reação
+                            const emojisTristes = ['😢', '😭', '🥺', '😔', '😞', '😿', '💔', '🙁', '☹️', '😥'];
+                            const emojiAleatorio = emojisTristes[Math.floor(Math.random() * emojisTristes.length)];
+
+                            // Adiciona reação de emoji triste na mensagem original
+                            try {
+                                await sock.sendMessage(chatJid, {
+                                    react: {
+                                        text: emojiAleatorio,
+                                        key: msg.key
+                                    }
+                                });
+                            } catch (error) {
+                                console.error('[Lista Auto-Saída] Erro ao adicionar reação:', error);
+                            }
+
+                            // Mensagens engraçadas aleatórias (MUITAS opções para variedade!)
+                            const mensagensEngracadas = [
+                                `😮 Eita! Já que você não vai mais, te removi da lista! 👋`,
+                                `🤔 Ué, mudou de ideia? Tranquilo! Te tirei da lista já! 😄`,
+                                `😱 Pegamos você de surpresa! Como você não vai mais, já te removi da lista! 🎭`,
+                                `🎪 Abracadabra! *POOF* 💨\nVocê sumiu da lista! 😂`,
+                                `🚀 Entendido! Já que não vai mais, te mandei pra fora da lista! 😜`,
+                                `🎯 Pronto! Você foi removido(a) da lista num piscar de olhos! ⚡`,
+                                `🌪️ Whoosh! Você desapareceu da lista como mágica! ✨`,
+                                `🎭 Que reviravolta! Você saiu da lista antes mesmo de piscar! 👀`,
+                                `🎬 Ação! E... cortou! Você não está mais na lista! 🎥`,
+                                `🌟 Entendido, chefe! Você foi removido(a) da lista! 🫡`,
+                                `🎨 Apagando você da lista... Pronto! Como se nunca tivesse estado aqui! 🖌️`,
+                                `⚡ Rapidinho! Você já foi removido(a) da lista! 💨`,
+                                `🎪 Truque de mágica: agora você vê, agora não vê mais na lista! 🪄`,
+                                `🌈 Puf! Você sumiu da lista como um arco-íris depois da chuva! ☁️`,
+                                `🎵 Tchau tchau! Você saiu da lista dançando! 💃`,
+                                `🎲 Jogada feita! Você foi removido(a) da lista! 🎰`,
+                                `🔮 A bola de cristal previu: você não está mais na lista! ✨`,
+                                `🎪 Senhoras e senhores, testemunhem o desaparecimento da lista! 🎩`,
+                                `🌟 Missão cumprida! Você foi removido(a) da lista com sucesso! ✅`,
+                                `🎯 Alvo atingido! Você saiu da lista! 🏹`,
+                                `🚁 Evacuação completa! Você foi retirado(a) da lista! 🆘`,
+                                `🎪 E para o nosso próximo truque... você não está mais na lista! 🃏`,
+                                `⭐ Estrela cadente! Você passou pela lista e já foi! 💫`,
+                                `🎢 Que montanha-russa! Você entrou e já saiu da lista! 🎡`
+                            ];
+
+
+                            const mensagemAleatoria = mensagensEngracadas[Math.floor(Math.random() * mensagensEngracadas.length)];
+
+                            // Envia mensagem engraçada mencionando a pessoa e a mensagem original
+                            await sock.sendMessage(chatJid, {
+                                text: `${mensagemAleatoria}\n\n❌ ${nomeUsuario} não vai mais!`,
+                                mentions: [senderJid]
+                            }, { quoted: msg });
+
+                            // Aguarda 1 segundo com status "digitando"
+                            await sock.sendPresenceUpdate('composing', chatJid);
+                            await delay(1000);
+                            await sock.sendPresenceUpdate('paused', chatJid);
+
+                            // Busca o comando lista para usar a função mostrarLista
+                            const listaCommand = commands.get('lista');
+
+                            // Por fim, mostra a lista atualizada
+                            if (listaCommand && typeof listaCommand.mostrarLista === 'function') {
+                                await listaCommand.mostrarLista(sock, chatJid, db);
+                            }
+
+                            return; // Interrompe o processamento
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[Lista Auto-Saída] Erro ao processar desistência:', error);
+            }
+        }
+        // --- FIM DETECÇÃO AUTOMÁTICA DE DESISTÊNCIA ---
 
         // Se nenhum comando com prefixo foi encontrado, tente identificar comandos de forma inteligente
         if (!isCommand && message) {

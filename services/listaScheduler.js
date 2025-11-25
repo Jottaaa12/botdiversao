@@ -27,12 +27,15 @@ function iniciarAgendamentos(sock, db) {
             return;
         }
 
+        // Obtém a data/hora atual no fuso horário de São Paulo
         const agora = new Date();
+        const agoraSaoPaulo = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+
         // Formata hora atual para HH:MM
-        const horas = String(agora.getHours()).padStart(2, '0');
-        const minutos = String(agora.getMinutes()).padStart(2, '0');
+        const horas = String(agoraSaoPaulo.getHours()).padStart(2, '0');
+        const minutos = String(agoraSaoPaulo.getMinutes()).padStart(2, '0');
         const horarioAtual = `${horas}:${minutos}`;
-        const diaSemana = agora.getDay(); // 0 (Dom) a 6 (Sab)
+        const diaSemana = agoraSaoPaulo.getDay(); // 0 (Dom) a 6 (Sab)
 
         try {
             // --- ENVIO AUTOMÁTICO ---
