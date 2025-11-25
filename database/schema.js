@@ -370,6 +370,20 @@ const initializeDatabase = () => {
 
     // --- FIM SISTEMA DE RIFAS ---
 
+    // Tabela de configurações avançadas
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS configuracoes_avancadas (
+            categoria TEXT NOT NULL,
+            chave TEXT NOT NULL,
+            valor TEXT,
+            tipo TEXT DEFAULT 'string', -- string, number, boolean, json
+            descricao TEXT,
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (categoria, chave)
+        )
+    `);
+
     // Migração para adicionar total_envios em agendamentos se não existir
     try {
         const infoAgendamentos = db.pragma('table_info(agendamentos)');
@@ -452,6 +466,10 @@ const initializeDatabase = () => {
         db.exec(`CREATE INDEX IF NOT EXISTS idx_numeros_status ON numeros_rifa(id_rifa, status);`);
         db.exec(`CREATE INDEX IF NOT EXISTS idx_compras_pendentes ON compras_pendentes(status, id_usuario);`);
         db.exec(`CREATE INDEX IF NOT EXISTS idx_sessoes_compra ON sessoes_compra_ia(id_usuario, etapa);`);
+
+        // Índice Configurações Avançadas
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_config_avancadas_categoria ON configuracoes_avancadas(categoria);`);
+
 
         console.log("Índices de performance verificados/criados.");
     } catch (error) {

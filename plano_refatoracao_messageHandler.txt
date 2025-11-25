@@ -1,0 +1,189 @@
+# Plano de Refatoração Detalhado para `handlers/messageHandler.js`
+
+## 1. Objetivo Principal
+
+Refatorar o arquivo `handlers/messageHandler.js` para transformá-lo de um grande e monolítico gerenciador de mensagens em um roteador de pipeline (middleware) leve e orquestrador. A nova arquitetura visará melhorar a modularidade, a separação de responsabilidades (SoC), a testabilidade e a escalabilidade do bot, eliminando o estado em memória e a lógica de negócios hardcoded.
+
+## 2. Problemas Identificados na Arquitetura Atual
+
+1.  **Função Monolítica (`handleMessage`):** A função principal é extremamente longa e complexa, lidando com dezenas de responsabilidades diferentes, desde moderação e jogos até fluxos interativos e execução de comandos.
+2.  **Violação do Princípio de Responsabilidade Única (SRP):** O arquivo atua como roteador, processador de comandos, gerenciador de estado de jogos, gerenciador de sessões interativas e manipulador de lógica de negócios, tudo ao mesmo tempo.
+3.  **Gerenciamento de Estado Frágil:** O uso extensivo de `Map`s em memória (`roletaRussaGames`, `agendamentoSteps`, `messageStore`, etc.) torna o estado do bot volátil (perdido a cada reinicialização) e impede a escalabilidade para múltiplos processos ou instâncias.
+4.  **Lógica Hardcoded:** A lógica para fluxos específicos (Roleta Russa, confirmações de TXPV, desistência de lista) está diretamente acoplada ao manipulador principal, tornando difícil adicionar novos fluxos sem modificar este arquivo central.
+5.  **Duplicação de Código:** A lógica de execução de comando (verificação de permissão, `try/catch`, envio de presença) é quase idêntica para comandos com prefixo e comandos identificados por linguagem natural.
+6.  **Objeto de Contexto Massivo:** Um objeto de contexto gigante com mais de 20 propriedades é passado para cada comando, criando um forte acoplamento e tornando a assinatura da função `execute` frágil e difícil de gerenciar.
+
+## 3. Arquitetura Proposta (O Estado Futuro)
+
+A nova arquitetura será baseada em um padrão de **pipeline (ou middleware)**. A `handleMessage` se tornará um orquestrador que passa um objeto de contexto através de uma série de "camadas" (middlewares). Cada camada tem uma única responsabilidade e pode decidir processar a mensagem e encerrar o pipeline, ou passá-la para a próxima camada.
+
+**Estrutura de Diretórios Proposta:**
+
+```
+/
+├── handlers/
+│   ├── messageHandler.js      # (Refatorado - apenas o orquestrador do pipeline)
+│   ├── middlewares/           # Novo diretório para as camadas do pipeline
+│   │   ├── 01_normalizer.js
+│   │   ├── 02_deduplicator.js
+│   │   ├── 03_moderation.js     # (Anti-Mute, Anti-Link, Blacklist)
+│   │   ├── 04_interactiveSession.js
+│   │   ├── 05_commandParser.js  # (Identifica comandos com prefixo e LN)
+│   │   └── 06_aiHandler.js      # (Respostas da IA no privado)
+│   └── services/
+│       ├── commandExecutor.js  # Novo serviço para executar comandos
+│       └── sessionManager.js   # Novo serviço para gerenciar o estado interativo
+└── database/
+    └── models/                 # (Opcional) Definições de tabelas para sessões
+```
+
+## 4. Plano de Refatoração Passo a Passo
+
+### Passo 1: Preparação e Backup
+
+1.  **Backup:** Crie uma cópia de segurança do arquivo `handlers/messageHandler.js` com o nome `messageHandler.js.bak`.
+2.  **Estrutura de Pastas:** Crie os novos diretórios: `handlers/middlewares`, `handlers/services`.
+
+### Passo 2: Abstrair o Gerenciamento de Estado (State Encapsulation)
+
+O objetivo é remover todos os `Map`s do escopo global de `messageHandler.js` e centralizá-los.
+
+1.  **Criar `handlers/services/sessionManager.js`:**
+    *   Mova todas as declarações `new Map()` (ex: `roletaRussaGames`, `agendamentoSteps`, `rifaCreationSteps`, `txpvConfirmations`, `messageStore`, etc.) para dentro deste novo arquivo.
+    *   Exporte funções para interagir com esses mapas. Em vez de exportar os mapas diretamente, crie uma interface clara.
+
+    ```javascript
+    // Exemplo em handlers/services/sessionManager.js
+    const interactiveSteps = new Map(); // Para agendamento, rifas, etc.
+    const gameStates = new Map(); // Para roleta russa, forca.
+    const messageStore = new Map();
+    const txpvConfirmations = new Map();
+
+    // Funções para sessões interativas
+    function startInteractiveSession(userId, command, step = 'initial', data = {}) {
+        interactiveSteps.set(userId, { command, step, data, timestamp: Date.now() });
+    }
+
+    function getInteractiveSession(userId) {
+        return interactiveSteps.get(userId);
+    }
+
+    function endInteractiveSession(userId) {
+        interactiveSteps.delete(userId);
+    }
+
+    // ...funções similares para get/set/delete de gameStates, messageStore, txpvConfirmations...
+
+    module.exports = {
+        startInteractiveSession,
+        getInteractiveSession,
+        endInteractiveSession,
+        // ...exportar outras funções
+    };
+    ```
+
+2.  **Refatorar `messageHandler.js`:**
+    *   Importe o novo `sessionManager`.
+    *   Substitua todas as chamadas diretas aos mapas (ex: `agendamentoSteps.has(senderJid)`) por chamadas às novas funções (`sessionManager.getInteractiveSession(senderJid)`).
+
+### Passo 3: Centralizar a Execução de Comandos
+
+O objetivo é eliminar a duplicação da lógica de execução de comandos.
+
+1.  **Criar `handlers/services/commandExecutor.js`:**
+    *   Crie uma função `async function execute(command, context)`.
+    *   Mova a lógica de verificação de permissão (`getPermissionLevel`, `permissionHierarchy`), a verificação do `modoSoAdm`, o bloco `try/catch`, e as chamadas `sock.sendPresenceUpdate` para dentro desta função.
+    *   O objeto `context` conterá tudo o que o comando precisa ( `sock`, `msg`, `db`, etc.).
+
+    ```javascript
+    // Exemplo em handlers/services/commandExecutor.js
+    async function execute(command, context) {
+        // 1. Verificação de permissão
+        // 2. Verificação de modoSoAdm
+        // 3. Bloco try/catch para executar command.execute(context)
+        // 4. Gerenciamento de 'presence' (composing/paused)
+        // 5. Tratamento de erro e envio de resposta de erro.
+        // 6. Envio da resposta de sucesso se for string.
+    }
+    module.exports = { execute };
+    ```
+
+2.  **Refatorar `messageHandler.js`:**
+    *   Nos locais onde os comandos com prefixo e os de linguagem natural são executados, substitua os blocos de código duplicados por uma única chamada: `await commandExecutor.execute(command, context)`.
+
+### Passo 4: Implementar o Pipeline de Middlewares
+
+Esta é a mudança arquitetural principal.
+
+1.  **Definir o Padrão Middleware:**
+    *   Cada middleware será uma função `async (context, next)`.
+    *   `context`: Um objeto que carrega os dados da mensagem (`sock`, `msg`, `senderJid`, `message`, `isGroup`, etc.) através do pipeline.
+    *   `next`: Uma função para chamar o próximo middleware na cadeia. Se `next()` não for chamado, o pipeline para.
+
+2.  **Criar os Middlewares (em `handlers/middlewares/`):**
+    *   **`01_normalizer.js`:** Pega a mensagem bruta (`m`), extrai e normaliza `senderJid`, `chatJid`, `message`, etc., e os adiciona ao `context`. Também pode lidar com a marcação de "lido".
+    *   **`02_deduplicator.js`:** Implementa a lógica de anti-duplicação de comandos. Se detectar um duplicado, ele simplesmente retorna sem chamar `next()`.
+    *   **`03_moderation.js`:** Combina as verificações `handleAntiMute`, `handleAntiLink`, e `blacklist`. Se uma violação for encontrada, ele pune o usuário e para o pipeline.
+    *   **`04_interactiveSession.js`:**
+        *   Verifica se existe uma sessão interativa para o usuário usando `sessionManager.getInteractiveSession(senderJid)`.
+        *   Se houver, ele encontra o módulo de comando associado à sessão (ex: `commands.get('agendar')`).
+        *   Ele então chama uma função especializada no módulo do comando, como `command.handleInteraction(context)`, e encerra o pipeline. Isso remove a cadeia `if/else` gigante do `messageHandler`.
+    *   **`05_commandParser.js`:**
+        *   Tenta identificar um comando, seja por prefixo, pelo `quickCommandFilter` ou pelo `parseNaturalCommand`.
+        *   Se um comando for encontrado e válido, ele o anexa ao `context` (ex: `context.command = command; context.args = args;`).
+        *   Em seguida, ele chama `await commandExecutor.execute(context.command, context)` e encerra o pipeline.
+    *   **`06_aiHandler.js`:**
+        *   Este é o último middleware. Ele só é executado se nenhum comando ou sessão interativa foi processado.
+        *   Ele verifica se a mensagem é privada, se a IA está ativa e, em caso afirmativo, gera e envia a resposta da IA (usando `generateResponse` ou `raffleAIService`).
+
+3.  **Refatorar `handlers/messageHandler.js` para ser o Orquestrador:**
+
+    ```javascript
+    // Exemplo em handlers/messageHandler.js (versão final)
+    const middlewares = [
+        require('./middlewares/01_normalizer'),
+        require('./middlewares/02_deduplicator'),
+        // ... carregar todos os middlewares em ordem
+    ];
+
+    async function handleMessage(sock, m) {
+        // 1. Criar o objeto de contexto inicial
+        const context = { sock, m, db, commands, sessionManager /* etc. */ };
+
+        // 2. Construir e executar o pipeline
+        const runPipeline = middlewares.reduceRight(
+            (next, middleware) => async () => await middleware(context, next),
+            async () => { /* Pipeline concluído sem interrupção */ }
+        );
+
+        try {
+            await runPipeline();
+        } catch (error) {
+            console.error('[Pipeline] Erro fatal no pipeline de mensagem:', error);
+        }
+    }
+
+    module.exports = { handleMessage, /* ... */ };
+    ```
+
+### Passo 5: Migrar Estado para o Banco de Dados (Passo Avançado)
+
+Este passo torna o bot verdadeiramente "stateless".
+
+1.  **Definir Esquemas:**
+    *   Crie tabelas no seu banco de dados (ex: SQLite) para armazenar os estados que hoje estão nos `Map`s.
+    *   `interactive_sessions`: `user_id (PK)`, `command_name`, `current_step`, `session_data (JSON)`, `expires_at`.
+    *   `game_states`: `chat_id (PK)`, `game_name`, `game_data (JSON)`, `expires_at`.
+    *   `message_store`: `message_id (PK)`, `chat_id`, `sender_id`, `content (JSON)`, `timestamp`.
+
+2.  **Refatorar `sessionManager.js`:**
+    *   Altere as funções para, em vez de usar `Map.get/set/delete`, elas executarem queries no banco de dados (`db.prepare('...').run(...)`).
+    *   Isso isola a lógica do banco de dados neste serviço, e o resto da aplicação não precisa saber se o estado está em memória ou no DB.
+
+## 5. Resumo dos Benefícios da Refatoração
+
+*   **Código Limpo e Organizado:** Cada arquivo terá uma responsabilidade clara e única.
+*   **Manutenibilidade:** Adicionar um novo comando interativo, uma nova verificação de moderação ou alterar a ordem de processamento se torna trivial (apenas adicionando/reordenando um middleware).
+*   **Testabilidade:** Cada middleware e serviço pode ser testado de forma isolada, sem a necessidade de simular todo o ambiente do bot.
+*   **Escalabilidade e Resiliência:** Ao mover o estado para um banco de dados, o bot se torna "stateless". Ele pode ser reiniciado a qualquer momento sem perder o contexto de jogos ou conversas interativas.
+*   **Desacoplamento:** Os comandos não precisam mais saber da existência de dezenas de outros sistemas; eles recebem um contexto limpo e executam sua lógica.
